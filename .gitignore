@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Environment
+.env
+
+# Database (chaque machine a la sienne)
+*.db
+*.db-shm
+*.db-wal
+
+# Recordings (audio volumineux, pas versionné)
+recordings/
+
+# macOS
+.DS_Store
+*.swp
+
+# IDE
+.vscode/
+.idea/
+
+# Xcode
+NoterApp/NoterApp.xcodeproj/xcuserdata/
+NoterApp/build/
+NoterApp/DerivedData/
+
+# Claude
+.claude/
