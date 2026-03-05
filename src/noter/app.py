@@ -261,11 +261,12 @@ def main():
     # Initialiser la DB
     get_db()
 
+    # Cacher l'icône Python du Dock
+    from AppKit import NSApplication
+    NSApplication.sharedApplication().setActivationPolicy_(1)  # NSApplicationActivationPolicyAccessory
+
     app = NoterApp()
     app.run()
-
-    # Note: pour cacher l'icône du Dock, LSUIElement=true dans Info.plist
-    # du .app bundle s'en charge
 
 
 if __name__ == "__main__":
