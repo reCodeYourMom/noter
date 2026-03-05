@@ -9,7 +9,7 @@ from pathlib import Path
 
 # Charger le .env AVANT tout import de config
 from dotenv import load_dotenv
-load_dotenv(Path(__file__).parent.parent.parent.parent / ".env")
+load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 import rumps
 
@@ -37,6 +37,7 @@ class NoterApp(rumps.App):
         self._recorder: Recorder | None = None
         self._record_thread: threading.Thread | None = None
         self._server_thread: threading.Thread | None = None
+        self._pending_refresh = threading.Event()
 
         # Menu items
         self._record_system = rumps.MenuItem("Enregistrer (Mic + Système)", callback=self._on_record_system)
@@ -122,10 +123,20 @@ class NoterApp(rumps.App):
 
         rumps.notification("Noter", f"Enregistrement terminé ({dur_str})", "Transcription en cours...")
 
-        # Pipeline en background
+        # Sauvegarder tout de suite, puis pipeline en background
+        try:
+            recording_id = save_recording(recorder)
+        except Exception as e:
+            logger.error(f"Erreur sauvegarde: {e}")
+            rumps.notification("Noter", "Erreur", str(e)[:100])
+            self._reset_ui()
+            return
+
+        # Réactiver l'UI immédiatement pour pouvoir relancer un enregistrement
+        self._reset_ui()
+
         def pipeline():
             try:
-                recording_id = save_recording(recorder)
                 logger.info(f"Pipeline démarré: {recording_id[:8]}")
                 run_pipeline(recording_id)
                 rumps.notification("Noter", "Résumé prêt", f"Enregistrement {recording_id[:8]} traité")
@@ -134,8 +145,7 @@ class NoterApp(rumps.App):
                 logger.error(f"Erreur pipeline: {e}")
                 rumps.notification("Noter", "Erreur", str(e)[:100])
             finally:
-                self._reset_ui()
-                self._refresh_recordings()
+                self._pending_refresh.set()
 
         threading.Thread(target=pipeline, daemon=True).start()
 
@@ -150,12 +160,16 @@ class NoterApp(rumps.App):
 
     @rumps.timer(1)
     def _update_timer(self, sender):
-        """Met à jour le titre avec la durée d'enregistrement."""
+        """Met à jour le titre + rafraîchit le menu quand un pipeline finit."""
         if self._recorder and self._recorder.is_recording:
             elapsed = self._recorder.elapsed
             minutes = int(elapsed // 60)
             seconds = int(elapsed % 60)
             self.title = f"REC {minutes:02d}:{seconds:02d}"
+
+        if self._pending_refresh.is_set():
+            self._pending_refresh.clear()
+            self._refresh_recordings()
 
     # ─── Recordings list ────────────────────────────────────────
 

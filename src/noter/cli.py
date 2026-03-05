@@ -1,8 +1,14 @@
 """CLI principal Noter."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
+from dotenv import load_dotenv
 from rich.console import Console
+
+# Charger le .env AVANT tout import de config
+load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 app = typer.Typer(
     name="noter",
