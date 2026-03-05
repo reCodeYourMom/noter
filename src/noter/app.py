@@ -21,16 +21,21 @@ from noter.storage.database import get_db
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
 logger = logging.getLogger("noter.app")
 
-TITLE_IDLE = "Noter"
+TITLE_IDLE = ""
 TITLE_RECORDING = "REC"
 TITLE_PROCESSING = "..."
+
+ICON_PATH = Path(__file__).parent.parent.parent / "icon.png"
 
 
 class NoterApp(rumps.App):
     def __init__(self):
+        icon = str(ICON_PATH) if ICON_PATH.exists() else None
         super().__init__(
             name="Noter",
             title=TITLE_IDLE,
+            icon=icon,
+            template=True,
             quit_button=None,
         )
 

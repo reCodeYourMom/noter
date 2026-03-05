@@ -84,7 +84,8 @@ final class AudioRecorderService: ObservableObject {
         timer?.invalidate()
         timer = nil
 
-        let duration = currentDuration
+        // Calculer depuis startTime (le timer ne tourne pas en background pendant les appels)
+        let duration = startTime.map { Date().timeIntervalSince($0) } ?? currentDuration
 
         if let id = currentRecordingID {
             RecordingStore.shared.updateDuration(id, duration: duration)
