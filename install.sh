@@ -37,7 +37,15 @@ else
     echo "✓ Python trouvé: $PYTHON ($version)"
 fi
 
-# ─── 3. BlackHole (audio système) ───────────────────────
+# ─── 3. ffmpeg (requis par Whisper) ────────────────────
+if ! command -v ffmpeg &>/dev/null; then
+    echo "→ Installation de ffmpeg..."
+    brew install ffmpeg
+else
+    echo "✓ ffmpeg installé"
+fi
+
+# ─── 4. BlackHole (audio système) ───────────────────────
 if ! system_profiler SPAudioDataType 2>/dev/null | grep -q "BlackHole"; then
     echo "→ Installation de BlackHole 2ch (capture audio système)..."
     brew install blackhole-2ch
