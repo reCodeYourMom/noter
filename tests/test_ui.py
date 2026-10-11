@@ -9,19 +9,23 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtCore import QEventLoop, QTimer  # noqa: E402
 from PySide6.QtWidgets import QApplication, QCheckBox  # noqa: E402
 
 from noter.models import RecordingStatus  # noqa: E402
+from noter.ui import theme  # noqa: E402
 from noter.ui.bridge import ServiceBridge  # noqa: E402
 from noter.ui.main_window import MainWindow  # noqa: E402
-from noter.ui.models import RecordingRole  # noqa: E402
 from noter.ui.settings_dialog import read_env, write_env  # noqa: E402
+from noter.ui.widgets.rail import NavKey  # noqa: E402
+from noter.ui.widgets.recording_list import HeaderRole, RecordingRole  # noqa: E402
 
 
 @pytest.fixture(scope="session")
 def qapp():
     app = QApplication.instance() or QApplication([])
+    theme.load_fonts()
+    theme.apply(app, dark=False)
     yield app
 
 
@@ -40,44 +44,36 @@ def window(qapp, service, wav):
 
 
 def _process(qapp, ms: int = 50):
-    from PySide6.QtCore import QEventLoop, QTimer
-
     loop = QEventLoop()
     QTimer.singleShot(ms, loop.quit)
     loop.exec()
 
 
+def _rows(model):
+    return [model.index(i).data(RecordingRole) for i in range(model.rowCount()) if model.index(i).data(HeaderRole) is None]
+
+
 def test_window_lists_and_shows_detail(qapp, window):
     w, rec = window
-    assert w.list_model.rowCount() == 1
-    assert w.list_model.index(0).data(RecordingRole).id == rec.id
+    recs = _rows(w.list_model)
+    assert [r.id for r in recs] == [rec.id]
+    assert w.list_model.index(0).data(HeaderRole) == "Aujourd’hui"
     assert w.stack.currentWidget() is w.list_view
-
-    w.list_view.setCurrentIndex(w.list_model.index(0))
-    qapp.processEvents()
-    assert w.detail_stack.currentIndex() == 0
+    # Premier enregistrement sélectionné automatiquement → fiche affichée
+    assert w.main_stack.currentWidget() is w.detail
     assert w.detail.rec.id == rec.id
     assert w.detail.title_edit.text() == "Call ACME"
-    assert "Prêt" in w.detail.status_lab.text()
-    assert w.detail.seg_list.count() == 1
+    assert w.detail.transcript.model_.rowCount() == 1
+    assert w.detail.timeline.peaks  # onde calculée à l'import
     checkboxes = w.detail.summary_box.findChildren(QCheckBox)
-    assert len(checkboxes) == 1 and "Envoyer le devis" in checkboxes[0].text()
-
-    # Filtres : projet et tag présents
-    labels = []
-    it = w.filters.topLevelItem(0)
-    for i in range(w.filters.topLevelItemCount()):
-        top = w.filters.topLevelItem(i)
-        labels.append(top.text(0))
-        labels += [top.child(j).text(0) for j in range(top.childCount())]
-    assert "ACME" in labels and "#client" in labels
-    assert it is not None
+    assert len(checkboxes) == 1
+    # Rail : projet et tag présents avec compteurs
+    labels = [it.lab.text() for it in w.rail._items]
+    assert "ACME" in labels and "#client" in labels and "Tous" in labels
 
 
 def test_edit_metadata_from_detail(qapp, window, service):
     w, rec = window
-    w.list_view.setCurrentIndex(w.list_model.index(0))
-    qapp.processEvents()
     w.detail.title_edit.setText("Renommé")
     w.detail.title_edit.editingFinished.emit()
     w.detail.tags.setText("a, b")
@@ -90,8 +86,6 @@ def test_edit_metadata_from_detail(qapp, window, service):
 
 def test_action_checkbox_persists(qapp, window, service):
     w, rec = window
-    w.list_view.setCurrentIndex(w.list_model.index(0))
-    qapp.processEvents()
     cb = w.detail.summary_box.findChildren(QCheckBox)[0]
     cb.setChecked(True)
     assert service.repo.get_summary(rec.id).actions[0].done is True
@@ -105,23 +99,22 @@ def test_search_shows_results_and_opens_recording(qapp, window):
     assert w.stack.currentWidget() is w.results
     assert w.results.count() >= 1
     w._on_result(w.results.item(0))
-    assert w.detail.rec.id == rec.id
+    assert w.detail.rec.id == rec.id and w.main_stack.currentWidget() is w.detail
     w.search.clear()
     qapp.processEvents()
     assert w.stack.currentWidget() is w.list_view
 
 
-def test_filters_failed_only(qapp, window, service):
+def test_nav_filters(qapp, window, service):
     w, rec = window
     service.repo.set_status(rec.id, RecordingStatus.FAILED)
     w.refresh()
-    # cliquer sur "Échecs"
-    item = w.filters.topLevelItem(2)
-    assert item.text(0).startswith("Échecs (1)")
-    w._on_filter(item, 0)
-    assert w.list_model.rowCount() == 1 and w.list_model.filter.failed_only
-    w._on_filter(w.filters.topLevelItem(1), 0)  # En cours → vide
-    assert w.list_model.rowCount() == 0
+    w._on_nav(NavKey("failed"))
+    assert len(_rows(w.list_model)) == 1 and w.list_model.filter.kind == "failed"
+    w._on_nav(NavKey("active"))
+    assert len(_rows(w.list_model)) == 0 and w.stack.currentWidget() is w.list_empty
+    w._on_nav(NavKey("project", "ACME"))
+    assert len(_rows(w.list_model)) == 1
 
 
 def test_job_signal_refreshes_list(qapp, window, service, wav):
@@ -131,16 +124,31 @@ def test_job_signal_refreshes_list(qapp, window, service, wav):
     second = make_wav(wav.parent / "second.wav", seconds=1.0)
     w.bridge.import_files([str(second)])
     _process(qapp, 300)
-    assert w.list_model.rowCount() == 2
-    service.jobs.run_pending()  # émet job_changed depuis ce thread
+    assert len(_rows(w.list_model)) == 2
+    service.jobs.run_pending()
     _process(qapp, 300)
     assert all(r.status == RecordingStatus.DONE for r in service.repo.list_recordings())
+
+
+def test_empty_state_when_no_recordings(qapp, service):
+    bridge = ServiceBridge(service)
+    w = MainWindow(bridge)
+    w.show()
+    qapp.processEvents()
+    assert w.main_stack.currentWidget() is w.empty
+    w.deleteLater()
 
 
 def test_close_hides_instead_of_quitting(qapp, window):
     w, _ = window
     w.close()
     assert not w.isVisible()
+
+
+def test_dark_theme_applies(qapp):
+    t = theme.apply(qapp, dark=True)
+    assert t.is_dark and "IBM Plex" in qapp.styleSheet()
+    theme.apply(qapp, dark=False)
 
 
 def test_env_roundtrip(tmp_path):
@@ -151,4 +159,17 @@ def test_env_roundtrip(tmp_path):
     assert env["ANTHROPIC_API_KEY"] == "sk-new" and env["NOTER_WHISPER_MODEL"] == "small"
     assert env["NOTER_CLAUDE_EFFORT"] == "high" and env["AUTRE"] == "1"
     assert p.read_text().startswith("# commentaire\n")
-    assert Qt is not None
+
+
+def test_single_instance_lock(qapp):
+    from noter.ui.single_instance import SingleInstance
+
+    first = SingleInstance("noter-test-lock")
+    assert first.acquire()
+    received = []
+    first.message_received.connect(received.append)
+    second = SingleInstance("noter-test-lock")
+    assert not second.acquire()
+    assert second.notify_existing("show")
+    _process(qapp, 200)
+    assert received == ["show"]

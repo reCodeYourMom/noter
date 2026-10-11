@@ -281,6 +281,32 @@ def service_uninstall():
     console.print("[green]Désinstallé[/]" if uninstall() else "[dim]Rien à désinstaller[/]")
 
 
+app_bundle = typer.Typer(help="Bundle Noter.app dans ~/Applications (icône et nom dans le Dock).")
+app.add_typer(app_bundle, name="app")
+
+
+@app_bundle.command("install")
+def app_install():
+    from noter import macapp
+    from noter.launchd import is_installed
+
+    p = macapp.install()
+    console.print(f"[green]Noter.app installé[/] : {p}")
+    if is_installed():
+        from noter.config import load_settings
+        from noter.launchd import install
+
+        install(load_settings().log_path)
+        console.print("[dim]LaunchAgent mis à jour pour lancer Noter.app[/]")
+
+
+@app_bundle.command("uninstall")
+def app_uninstall():
+    from noter import macapp
+
+    console.print("[green]Noter.app supprimé[/]" if macapp.uninstall() else "[dim]Rien à supprimer[/]")
+
+
 @app.command()
 def doctor():
     """Vérifie la configuration."""

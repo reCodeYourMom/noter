@@ -40,16 +40,17 @@ noter doctor
 
 ## L'application
 
-`noter-app` ouvre l'app desktop (PySide6) et place une icône dans la barre de menu.
+`noter app install` crée `~/Applications/Noter.app` (icône, nom « Noter » dans le Dock et la barre de menu). `install.sh` le fait pour toi. L'app vit ensuite dans la barre de menu : fermer la fenêtre ne la quitte pas.
 
-- **Barre de menu** : enregistrer (micro + système ou micro seul), arrêter, état du traitement, rouvrir la fenêtre. Fermer la fenêtre ne quitte pas l'app.
-- **Liste** filtrable par état (tous, en cours, échecs), projet et tag, avec statut coloré, durée et date.
-- **Fiche d'un enregistrement** : titre, projet, tags et notes éditables en place ; résumé (TL;DR, points clés, décisions, actions cochables) ; transcript horodaté synchronisé avec le lecteur audio (double-clic pour écouter un passage, clic droit pour renommer un speaker) ; relancer le traitement ou régénérer le résumé ; ouvrir le dossier ou le PDF ; copier le résumé en Markdown.
-- **Recherche** plein texte dans les transcripts, résumés et titres, avec ouverture directe au bon passage.
-- **Import** par le bouton ou en glissant des fichiers audio dans la fenêtre.
-- **Réglages** (clé API, modèles, langue) écrits dans `~/Noter/.env`.
+- **Rail de navigation** : tous, en cours, échecs, puis projets et tags avec compteurs ; état du traitement en bas.
+- **Liste** groupée par jour (aujourd'hui, hier, cette semaine…), un glyphe d'état par ligne (prêt, en cours animé, à traiter, échec), durée, projet et tags.
+- **Fiche d'un enregistrement** : titre, projet, tags et notes modifiables en place. En tête, la **timeline audio** : onde du call, couloir des speakers en couleurs, tête de lecture ; clic pour se déplacer. Dessous, deux colonnes : la synthèse (en bref, points clés, décisions, actions cochables avec responsable et échéance) et le transcript horodaté avec avatars des speakers, synchronisé à la lecture (double-clic pour écouter un passage, clic droit pour renommer un speaker).
+- **Console d'enregistrement** : voyant, compteur, titre, vumètres micro et système, bouton Arrêter.
+- **Recherche** plein texte dans transcripts, résumés et titres ; un résultat ouvre la fiche au bon passage, les occurrences sont marquées sur la timeline.
+- **Import** par bouton ou glisser-déposer. **Réglages** (clé API, modèles, langue) dans `~/Noter/.env`.
+- Thème clair ou sombre selon le système, typographie IBM Plex (sans et mono), une seule couleur d'accent : le rouge du REC.
 
-Raccourcis : `⌘R` enregistrer, `⌘⇧R` micro seul, `⌘.` arrêter, `⌘I` importer, `⌘F` rechercher, `⌘,` réglages.
+Raccourcis : `⌘R` enregistrer, `⌘⇧R` micro seul, `⌘.` arrêter, `⌘I` importer, `⌘F` rechercher, `⌘,` réglages, `⌘⌫` supprimer.
 
 ## Ligne de commande
 
@@ -65,6 +66,7 @@ noter edit <id> -t "Nouveau titre" --tag x --tag y
 noter process <id> [--summary]   # relance transcription (ou résumé seul)
 noter retry [<id>]               # relance les jobs en échec
 noter jobs                       # historique des jobs
+noter app install                # Noter.app dans ~/Applications
 noter service install            # lancement au login (LaunchAgent)
 ```
 
@@ -113,7 +115,8 @@ src/noter/
 ├── transcription/    moteurs Whisper + diarisation
 ├── analyzer/         prompts + Claude (sortie structurée)
 ├── export/           PDF
-├── ui/               app desktop PySide6 (fenêtre, détail, lecteur, tray, réglages)
+├── ui/               app desktop PySide6 : theme (tokens), icons, widgets/ (rail, liste, timeline, console…)
+├── macapp.py         bundle Noter.app
 ├── cli.py            ligne de commande
 └── launchd.py        LaunchAgent macOS
 ```

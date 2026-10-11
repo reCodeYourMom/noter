@@ -49,7 +49,11 @@ MSG
 fi
 echo "✓ BlackHole"
 
-# 4. Environnement Python
+# 4. Environnement Python (recréé s'il date d'un Python trop ancien)
+if [ -d .venv ] && ! .venv/bin/python -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
+    echo "→ Ancien .venv (Python < 3.11) : recréation…"
+    rm -rf .venv
+fi
 [ -d .venv ] || "$PYTHON" -m venv .venv
 source .venv/bin/activate
 pip install --quiet --upgrade pip
@@ -76,8 +80,9 @@ fi
 echo
 .venv/bin/noter doctor
 
-# 7. Lancement au login
+# 7. Noter.app dans ~/Applications (icône et nom dans le Dock) + lancement au login
 echo
+.venv/bin/noter app install
 read -r -p "   Lancer Noter automatiquement au login ? [O/n] " yn
 if [[ "${yn:-O}" =~ ^[OoYy]$ ]]; then
     .venv/bin/noter service install
@@ -89,8 +94,9 @@ cat <<MSG
   ✓ Installation terminée
 ═══════════════════════════════
 
+  open -a Noter         # ou Spotlight → Noter
   source $NOTER_DIR/.venv/bin/activate
-  noter-app             # app menu bar
+  noter-app             # équivalent depuis le terminal
   noter record          # enregistrer depuis le terminal
   noter import f.m4a    # traiter un fichier existant
   noter list / show / search

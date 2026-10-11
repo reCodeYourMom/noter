@@ -17,6 +17,7 @@ from pathlib import Path
 from noter import notify
 from noter.audio.mixer import mix_wavs, wav_duration
 from noter.audio.recorder import MIC_TMP, SYS_TMP, Recorder
+from noter.audio.waveform import write_waveform
 from noter.config import Settings, load_settings
 from noter.jobs import JobQueue
 from noter.models import Recording, RecordingStatus, Source
@@ -124,7 +125,14 @@ class Service:
         )
         rec = self.repo.get_recording(rec.id)  # type: ignore[assignment]
         files.write_meta(rec)
+        self._waveform(rec)
         return rec
+
+    def _waveform(self, rec: Recording) -> None:
+        try:
+            write_waveform(rec.audio_path, rec.dir_path)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Onde non calculée pour %s : %s", rec.short_id, e)
 
     # ─── Import ─────────────────────────────────────────────────────
 
@@ -148,6 +156,7 @@ class Service:
         )
         self.repo.create_recording(rec)
         files.write_meta(rec)
+        self._waveform(rec)
         if enqueue:
             self.jobs.process_recording(rec.id)
         logger.info("Import %s : %s (%.0fs)", rec.short_id, path.name, duration)

@@ -26,8 +26,33 @@ def main() -> int:
 
     app = QApplication(sys.argv)
     app.setApplicationName("Noter")
+    app.setApplicationDisplayName("Noter")
     app.setOrganizationName("Noter")
     app.setQuitOnLastWindowClosed(False)
+
+    from PySide6.QtGui import QFont, QIcon
+
+    from noter.ui import theme
+
+    theme.load_fonts()
+    app.setFont(QFont(theme.SANS, 13))
+    theme.apply(app)
+    icon_path = theme.FONT_DIR.parent / "AppIcon.png"
+    if icon_path.exists():
+        app.setWindowIcon(QIcon(str(icon_path)))
+    try:  # suivre le passage clair/sombre du système
+        app.styleHints().colorSchemeChanged.connect(lambda _s: theme.apply(app))
+    except Exception:  # noqa: BLE001
+        pass
+
+    # Instance unique : si Noter tourne déjà, on lui demande d'afficher sa fenêtre et on sort.
+    from noter.ui.single_instance import SingleInstance
+
+    instance = SingleInstance("noter-app")
+    if not instance.acquire():
+        instance.notify_existing("show")
+        logger.info("Noter tourne déjà — fenêtre existante réactivée")
+        return 0
 
     service = Service(settings)
     service.start()
@@ -41,7 +66,13 @@ def main() -> int:
 
     tray.record_requested.connect(bridge.start_recording)
     tray.stop_requested.connect(bridge.stop_recording)
-    tray.open_requested.connect(lambda: (window.show(), window.raise_(), window.activateWindow()))
+    def show_window():
+        window.show()
+        window.raise_()
+        window.activateWindow()
+
+    tray.open_requested.connect(show_window)
+    instance.message_received.connect(lambda msg: show_window() if msg == "show" else None)
     bridge.recording_started.connect(lambda _: tray.set_recording(True))
     bridge.recording_stopped.connect(lambda _: tray.set_recording(False))
     bridge.recording_tick.connect(lambda elapsed, _lv: tray.set_elapsed(elapsed))

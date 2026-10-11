@@ -13,15 +13,19 @@ def plist_path() -> Path:
     return Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
 
 
-def _executable() -> str:
+def _program_arguments() -> list[str]:
+    from noter import macapp
+
+    if macapp.is_installed():
+        return [str(macapp.app_path() / "Contents" / "MacOS" / "noter")]
     exe = Path(sys.executable).parent / "noter-app"
-    return str(exe) if exe.exists() else f"{sys.executable} -m noter.app"
+    return [str(exe)] if exe.exists() else [sys.executable, "-m", "noter.ui.main"]
 
 
 def install(log_path: Path) -> Path:
     plist = {
         "Label": LABEL,
-        "ProgramArguments": _executable().split(" "),
+        "ProgramArguments": _program_arguments(),
         "RunAtLoad": True,
         "KeepAlive": {"SuccessfulExit": False},
         "StandardOutPath": str(log_path),
