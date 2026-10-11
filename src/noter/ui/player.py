@@ -31,14 +31,16 @@ class AudioPlayer(QWidget):
             from PySide6.QtCore import Qt
         self.available = self._player is not None
 
-        self.btn = QPushButton("▶")
-        self.btn.setFixedWidth(36)
+        self.btn = QPushButton()
+        self.btn.setObjectName("play")
+        self.btn.setFixedSize(28, 28)
         self.btn.clicked.connect(self.toggle)
+        self._set_icon(False)
         self.slider = QSlider(Qt.Orientation.Horizontal)
         self.slider.setRange(0, 0)
         self.slider.sliderReleased.connect(self._on_seek_slider)
         self.time = QLabel("00:00 / 00:00")
-        self.time.setObjectName("meta")
+        self.time.setObjectName("metaMono")
         lay = QHBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(self.btn)
@@ -82,6 +84,9 @@ class AudioPlayer(QWidget):
         if self._player:
             self._player.stop()
 
+    def position_seconds(self) -> float:
+        return (self._player.position() / 1000) if self._player else 0.0
+
     # ─── interne ────────────────────────────────────────────────────
 
     def _on_position(self, ms: int) -> None:
@@ -105,4 +110,10 @@ class AudioPlayer(QWidget):
         from PySide6.QtMultimedia import QMediaPlayer
 
         playing = self._player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
-        self.btn.setText("⏸" if playing else "▶")
+        self._set_icon(playing)
+
+    def _set_icon(self, playing: bool) -> None:
+        from noter.ui import icons, theme
+
+        t = theme.current()
+        self.btn.setIcon(icons.icon("pause" if playing else "play", t.panel, 11))

@@ -26,8 +26,24 @@ def main() -> int:
 
     app = QApplication(sys.argv)
     app.setApplicationName("Noter")
+    app.setApplicationDisplayName("Noter")
     app.setOrganizationName("Noter")
     app.setQuitOnLastWindowClosed(False)
+
+    from PySide6.QtGui import QFont, QIcon
+
+    from noter.ui import theme
+
+    theme.load_fonts()
+    app.setFont(QFont(theme.SANS, 13))
+    theme.apply(app)
+    icon_path = theme.FONT_DIR.parent / "AppIcon.png"
+    if icon_path.exists():
+        app.setWindowIcon(QIcon(str(icon_path)))
+    try:  # suivre le passage clair/sombre du système
+        app.styleHints().colorSchemeChanged.connect(lambda _s: theme.apply(app))
+    except Exception:  # noqa: BLE001
+        pass
 
     # Instance unique : si Noter tourne déjà, on lui demande d'afficher sa fenêtre et on sort.
     from noter.ui.single_instance import SingleInstance

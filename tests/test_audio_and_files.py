@@ -56,3 +56,29 @@ def test_markdown_renders(tmp_path):
     s = summary_markdown(rec, Summary(recording_id="abc", model="m", tldr="T", key_points=["k"]), segs)
     assert "## Points clés\n- k" in s and "<details>" in s
     assert format_duration(None) == "-" and format_duration(65) == "1:05" and format_timestamp(3661) == "1:01:01"
+
+
+def test_waveform_peaks(tmp_path):
+    from noter.audio.waveform import compute_peaks, read_waveform, write_waveform
+
+    wav = make_wav(tmp_path / "w.wav", seconds=3.0, rate=16000)
+    peaks = compute_peaks(wav, bins=120)
+    assert len(peaks) == 120 and all(0.0 <= v <= 1.0 for v in peaks)
+    assert max(peaks) == 1.0
+    assert write_waveform(wav, tmp_path, bins=50) == tmp_path / "waveform.json"
+    assert len(read_waveform(tmp_path)) == 50
+
+
+def test_macapp_bundle(tmp_path, monkeypatch):
+    import plistlib
+
+    from noter import macapp
+
+    monkeypatch.setattr(macapp, "app_path", lambda: tmp_path / "Noter.app")
+    app = macapp.install()
+    plist = plistlib.loads((app / "Contents" / "Info.plist").read_bytes())
+    assert plist["CFBundleName"] == "Noter" and plist["CFBundleIconFile"] == "AppIcon"
+    assert (app / "Contents" / "Resources" / "AppIcon.icns").exists()
+    launcher = app / "Contents" / "MacOS" / "noter"
+    assert launcher.exists() and "noter.ui.main" in launcher.read_text()
+    assert macapp.is_installed() and macapp.uninstall() and not app.exists()

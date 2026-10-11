@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
 
@@ -60,7 +60,7 @@ class Recording:
 
     @property
     def display_title(self) -> str:
-        return self.title or f"Enregistrement du {self.started_at:%d/%m/%Y %H:%M}"
+        return self.title or f"Enregistrement du {self.started_at:%d/%m/%Y} à {self.started_at:%H:%M}"
 
     @property
     def duration_text(self) -> str:
@@ -142,6 +142,26 @@ class Job:
     created_at: datetime | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
+
+
+FR_DAYS = ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."]
+FR_DAYS_LONG = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+FR_MONTHS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."]
+FR_MONTHS_LONG = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
+
+
+def format_date_fr(dt: datetime, with_time: bool = True, long: bool = False) -> str:
+    """'mar. 7 oct. 2026 · 14:30' ou 'mardi 7 octobre 2026'."""
+    day = (FR_DAYS_LONG if long else FR_DAYS)[dt.weekday()]
+    month = (FR_MONTHS_LONG if long else FR_MONTHS)[dt.month - 1]
+    out = f"{day} {dt.day} {month} {dt.year}"
+    if with_time:
+        out += f" · {dt:%H:%M}"
+    return out
+
+
+def format_month_fr(dt: datetime | date) -> str:
+    return f"{FR_MONTHS_LONG[dt.month - 1].capitalize()} {dt.year}"
 
 
 def format_duration(seconds: float | None) -> str:
