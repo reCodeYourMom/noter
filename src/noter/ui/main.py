@@ -29,6 +29,15 @@ def main() -> int:
     app.setOrganizationName("Noter")
     app.setQuitOnLastWindowClosed(False)
 
+    # Instance unique : si Noter tourne déjà, on lui demande d'afficher sa fenêtre et on sort.
+    from noter.ui.single_instance import SingleInstance
+
+    instance = SingleInstance("noter-app")
+    if not instance.acquire():
+        instance.notify_existing("show")
+        logger.info("Noter tourne déjà — fenêtre existante réactivée")
+        return 0
+
     service = Service(settings)
     service.start()
     bridge = ServiceBridge(service)
@@ -41,7 +50,13 @@ def main() -> int:
 
     tray.record_requested.connect(bridge.start_recording)
     tray.stop_requested.connect(bridge.stop_recording)
-    tray.open_requested.connect(lambda: (window.show(), window.raise_(), window.activateWindow()))
+    def show_window():
+        window.show()
+        window.raise_()
+        window.activateWindow()
+
+    tray.open_requested.connect(show_window)
+    instance.message_received.connect(lambda msg: show_window() if msg == "show" else None)
     bridge.recording_started.connect(lambda _: tray.set_recording(True))
     bridge.recording_stopped.connect(lambda _: tray.set_recording(False))
     bridge.recording_tick.connect(lambda elapsed, _lv: tray.set_elapsed(elapsed))

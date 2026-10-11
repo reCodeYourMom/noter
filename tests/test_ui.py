@@ -152,3 +152,17 @@ def test_env_roundtrip(tmp_path):
     assert env["NOTER_CLAUDE_EFFORT"] == "high" and env["AUTRE"] == "1"
     assert p.read_text().startswith("# commentaire\n")
     assert Qt is not None
+
+
+def test_single_instance_lock(qapp):
+    from noter.ui.single_instance import SingleInstance
+
+    first = SingleInstance("noter-test-lock")
+    assert first.acquire()
+    received = []
+    first.message_received.connect(received.append)
+    second = SingleInstance("noter-test-lock")
+    assert not second.acquire()
+    assert second.notify_existing("show")
+    _process(qapp, 200)
+    assert received == ["show"]
