@@ -1,235 +1,147 @@
-"""Capture audio — mic + système via BlackHole."""
+"""Enregistreur : micro (+ audio système via BlackHole), écrit sur disque en continu.
+
+Chaque flux va dans son propre WAV temporaire via une queue + un thread d'écriture :
+la mémoire reste constante quelle que soit la durée, et un crash laisse des fichiers
+exploitables (voir Service.recover()).
+"""
 from __future__ import annotations
 
 import logging
-import signal
+import queue
 import threading
-import uuid
-from datetime import datetime
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
-import sounddevice as sd
-from rich.console import Console
-from scipy.io import wavfile
 
-from noter.audio.devices import find_blackhole, find_default_mic
-from noter.audio.monitor import RecordingMonitor
-from noter.config import settings
-from noter.storage.files import get_call_dir
+from noter.audio.devices import AudioDevice, default_mic, find_blackhole, supported_samplerate
 
 logger = logging.getLogger(__name__)
-console = Console()
+
+MIC_TMP = "_mic.wav"
+SYS_TMP = "_sys.wav"
+
+
+@dataclass
+class _Stream:
+    label: str
+    device: AudioDevice
+    samplerate: int
+    path: Path
+    q: queue.Queue = field(default_factory=lambda: queue.Queue(maxsize=512))
+    level: float = 0.0
+    frames: int = 0
+    overflows: int = 0
 
 
 class Recorder:
-    """Enregistreur audio multi-device (micro + système)."""
-
-    def __init__(self, mode: str = "system+mic", title: str | None = None):
-        self.mode = mode
-        self.title = title
-        self.recording_id = str(uuid.uuid4())
-        self.sample_rate = settings.sample_rate
-        self.started_at: datetime | None = None
-        self.ended_at: datetime | None = None
-        self.audio_path: Path | None = None
-        self._stop_event = threading.Event()
-        self._monitor = RecordingMonitor()
-        self._mic_chunks: list[np.ndarray] = []
-        self._sys_chunks: list[np.ndarray] = []
+    def __init__(self, target_dir: Path, with_system_audio: bool, sample_rate: int = 48000):
+        self.target_dir = Path(target_dir)
+        self.with_system_audio = with_system_audio
+        self.sample_rate = sample_rate
+        self._streams: list[_Stream] = []
+        self._stop = threading.Event()
         self._threads: list[threading.Thread] = []
+        self._started_at: float | None = None
+        self.system_audio_captured = False
+
+    # ─── Infos ──────────────────────────────────────────────────────
 
     @property
     def is_recording(self) -> bool:
-        return self.started_at is not None and self.ended_at is None
+        return self._started_at is not None and not self._stop.is_set()
 
     @property
     def elapsed(self) -> float:
-        if self.started_at is None:
-            return 0.0
-        end = self.ended_at or datetime.now()
-        return (end - self.started_at).total_seconds()
+        return time.monotonic() - self._started_at if self._started_at else 0.0
 
-    def _get_devices(self) -> tuple[int | None, int | None]:
-        """Retourne (mic_device_index, system_device_index)."""
-        mic = find_default_mic()
-        mic_idx = mic.index if mic else None
+    @property
+    def levels(self) -> dict[str, float]:
+        return {s.label: s.level for s in self._streams}
 
-        if self.mode == "mic_only":
-            return mic_idx, None
+    @property
+    def mic_path(self) -> Path:
+        return self.target_dir / MIC_TMP
 
-        blackhole = find_blackhole()
-        if not blackhole:
-            logger.warning("BlackHole non détecté — enregistrement micro seul")
-            return mic_idx, None
+    @property
+    def sys_path(self) -> Path | None:
+        return self.target_dir / SYS_TMP if self.system_audio_captured else None
 
-        return mic_idx, blackhole.index
+    # ─── Cycle de vie ───────────────────────────────────────────────
 
-    def _record_stream(self, device_index: int, label: str, chunks: list[np.ndarray]):
-        """Enregistre un stream depuis un device donné."""
+    def start(self) -> None:
+        mic = default_mic()
+        if mic is None:
+            raise RuntimeError("Aucun micro détecté (vérifie les permissions Micro dans Réglages Système)")
+        self.target_dir.mkdir(parents=True, exist_ok=True)
+        mic_rate = supported_samplerate(mic, self.sample_rate)
+        self._streams = [_Stream("MIC", mic, mic_rate, self.mic_path)]
+
+        if self.with_system_audio:
+            bh = find_blackhole()
+            if bh is None:
+                logger.warning("BlackHole non détecté — micro seul")
+            else:
+                self._streams.append(_Stream("SYS", bh, supported_samplerate(bh, self.sample_rate), self.target_dir / SYS_TMP))
+                self.system_audio_captured = True
+
+        self._stop.clear()
+        self._started_at = time.monotonic()
+        for s in self._streams:
+            t = threading.Thread(target=self._run_stream, args=(s,), name=f"rec-{s.label}", daemon=True)
+            self._threads.append(t)
+            t.start()
+        logger.info("Enregistrement démarré (%s)", ", ".join(f"{s.label}@{s.samplerate}" for s in self._streams))
+
+    def stop(self) -> float:
+        """Arrête les flux, ferme les fichiers. Retourne la durée (s)."""
+        self._stop.set()
+        for t in self._threads:
+            t.join(timeout=5)
+        self._threads = []
+        dur = self.elapsed
+        self._started_at = None
+        logger.info("Enregistrement arrêté (%.0fs)", dur)
+        return dur
+
+    # ─── Interne ────────────────────────────────────────────────────
+
+    def _run_stream(self, s: _Stream) -> None:
+        import sounddevice as sd
+        import soundfile as sf
 
         def callback(indata, frames, time_info, status):
             if status and status.input_overflow:
-                pass
-            chunks.append(indata.copy())
-            self._monitor.update(indata, label=label)
+                s.overflows += 1
+            mono = indata.mean(axis=1) if indata.ndim > 1 else indata
+            s.level = float(np.sqrt(np.mean(mono**2)))
+            try:
+                s.q.put_nowait(mono.copy())
+            except queue.Full:
+                s.overflows += 1
 
-        stream = sd.InputStream(
-            device=device_index,
-            samplerate=self.sample_rate,
-            channels=1,
-            dtype="float32",
-            callback=callback,
-            blocksize=4096,
-        )
-        stream.start()
-        self._stop_event.wait()
-        stream.stop()
-        stream.close()
-
-    def start_async(self):
-        """Lance l'enregistrement en background (non-bloquant). Appeler stop() pour arrêter."""
-        mic_idx, sys_idx = self._get_devices()
-
-        if mic_idx is None:
-            raise RuntimeError("Aucun micro détecté")
-
-        self.started_at = datetime.now()
-        call_dir = get_call_dir(self.started_at.isoformat(), self.title)
-        self.audio_path = call_dir / "audio.wav"
-
-        self._mic_chunks = []
-        self._sys_chunks = []
-        self._stop_event.clear()
-
-        # Lancer les threads d'enregistrement
-        mic_thread = threading.Thread(
-            target=self._record_stream,
-            args=(mic_idx, "MIC", self._mic_chunks),
-            daemon=True,
-        )
-        self._threads = [mic_thread]
-        mic_thread.start()
-
-        if sys_idx is not None:
-            sys_thread = threading.Thread(
-                target=self._record_stream,
-                args=(sys_idx, "SYS", self._sys_chunks),
-                daemon=True,
-            )
-            self._threads.append(sys_thread)
-            sys_thread.start()
-
-        logger.info(f"Enregistrement démarré: {self.recording_id[:8]} ({self.mode})")
-
-    def stop(self) -> Path:
-        """Arrête l'enregistrement, sauvegarde le WAV, retourne le chemin."""
-        self._stop_event.set()
-        for t in self._threads:
-            t.join(timeout=3)
-
-        self.ended_at = datetime.now()
-
-        audio = self._mix_audio(self._mic_chunks, self._sys_chunks)
-        wavfile.write(str(self.audio_path), self.sample_rate, audio)
-
-        logger.info(f"Enregistrement sauvegardé: {self.audio_path} ({self.elapsed:.0f}s)")
-        return self.audio_path
-
-    def start(self) -> Path:
-        """Lance l'enregistrement BLOQUANT (pour le CLI). Ctrl+C pour arrêter."""
-        self.start_async()
-
-        console.print(f"[green bold]Enregistrement démarré[/green bold] ({self.mode})")
-        console.print(f"  ID: [cyan]{self.recording_id[:8]}[/cyan]")
-        if self.title:
-            console.print(f"  Titre: {self.title}")
-        console.print("  [dim]Ctrl+C pour arrêter[/dim]\n")
-
-        def handle_stop(sig, frame):
-            self._stop_event.set()
-
-        signal.signal(signal.SIGINT, handle_stop)
-
-        self._monitor.start()
-        self._stop_event.wait()
-        self._monitor.stop()
-
-        audio_path = self.stop()
-
-        duration = self.elapsed
-        console.print(f"\n[green bold]Enregistrement terminé[/green bold]")
-        console.print(f"  Durée: {int(duration // 60)}:{int(duration % 60):02d}")
-        console.print(f"  Fichier: {audio_path}")
-
-        return audio_path
-
-    def _mix_audio(self, mic_chunks: list[np.ndarray], sys_chunks: list[np.ndarray]) -> np.ndarray:
-        """Mixe les streams micro et système."""
-        if not mic_chunks:
-            return np.array([], dtype="float32")
-
-        mic_audio = np.concatenate(mic_chunks, axis=0).flatten()
-
-        if not sys_chunks:
-            return mic_audio
-
-        sys_audio = np.concatenate(sys_chunks, axis=0).flatten()
-
-        min_len = min(len(mic_audio), len(sys_audio))
-        mic_audio = mic_audio[:min_len]
-        sys_audio = sys_audio[:min_len]
-
-        mixed = 0.5 * mic_audio + 0.5 * sys_audio
-
-        peak = np.max(np.abs(mixed))
-        if peak > 0:
-            mixed = mixed / peak * 0.95
-
-        return mixed.astype("float32")
-
-
-def save_recording(recorder: Recorder):
-    """Sauvegarde un enregistrement en base de données."""
-    from noter.storage.database import get_db
-
-    db = get_db()
-    duration = recorder.elapsed
-
-    db.execute(
-        """INSERT INTO recordings (id, title, mode, started_at, ended_at, duration_s, audio_path)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (
-            recorder.recording_id,
-            recorder.title,
-            recorder.mode,
-            recorder.started_at.isoformat() if recorder.started_at else None,
-            recorder.ended_at.isoformat() if recorder.ended_at else None,
-            duration,
-            str(recorder.audio_path),
-        ),
-    )
-    db.commit()
-    return recorder.recording_id
-
-
-def run_pipeline(recording_id: str):
-    """Lance transcription + résumé pour un enregistrement."""
-    from noter.transcription.engine import transcribe_recording
-    from noter.analyzer.claude import summarize_recording
-
-    transcribe_recording(recording_id)
-    summarize_recording(recording_id)
-
-
-def start_recording(mode: str = "system+mic", title: str | None = None):
-    """Point d'entrée CLI — enregistre puis lance le pipeline."""
-    recorder = Recorder(mode=mode, title=title)
-    recorder.start()
-
-    recording_id = save_recording(recorder)
-    console.print(f"\n[bold]Enregistrement sauvegardé.[/bold] ID: [cyan]{recording_id[:8]}[/cyan]")
-
-    console.print("\n[bold]Transcription en cours...[/bold]")
-    console.print("[bold]Résumé IA en cours...[/bold]")
-    run_pipeline(recording_id)
+        try:
+            with sf.SoundFile(str(s.path), "w", samplerate=s.samplerate, channels=1, subtype="PCM_16") as f:
+                with sd.InputStream(device=s.device.index, samplerate=s.samplerate, channels=1,
+                                    dtype="float32", blocksize=2048, callback=callback):
+                    while not self._stop.is_set():
+                        try:
+                            chunk = s.q.get(timeout=0.25)
+                        except queue.Empty:
+                            continue
+                        f.write(chunk)
+                        s.frames += len(chunk)
+                # Vider ce qui reste
+                while True:
+                    try:
+                        chunk = s.q.get_nowait()
+                    except queue.Empty:
+                        break
+                    f.write(chunk)
+                    s.frames += len(chunk)
+        except Exception:  # noqa: BLE001
+            logger.exception("Flux %s en erreur", s.label)
+            self._stop.set()
+        if s.overflows:
+            logger.warning("Flux %s : %d overflow(s)", s.label, s.overflows)

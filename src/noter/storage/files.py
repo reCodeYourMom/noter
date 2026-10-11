@@ -1,70 +1,119 @@
-"""Organisation des fichiers audio et transcriptions."""
+"""Organisation des fichiers sur disque : un dossier par enregistrement.
+
+~/Noter/recordings/2026-03-03_14h30_Sprint-Planning/
+    audio.wav        audio final
+    transcript.md    transcript horodaté
+    summary.md       compte-rendu
+    rapport.pdf      export PDF
+    meta.json        métadonnées (portable, lisible par n'importe quel script)
+"""
 from __future__ import annotations
 
+import json
 import re
+import unicodedata
+from datetime import datetime
 from pathlib import Path
 
-from noter.config import settings
+from noter.models import Recording, Segment, Summary, format_timestamp
+
+AUDIO_NAME = "audio.wav"
+TRANSCRIPT_NAME = "transcript.md"
+SUMMARY_NAME = "summary.md"
+PDF_NAME = "rapport.pdf"
+META_NAME = "meta.json"
 
 
-def _slugify(text: str) -> str:
-    """Transforme un titre en nom de dossier propre."""
-    text = text.strip()[:50]
-    text = re.sub(r'[^\w\s-]', '', text)
-    text = re.sub(r'[\s]+', '-', text)
-    return text.strip('-') or "recording"
+def slugify(text: str, max_len: int = 50) -> str:
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    text = re.sub(r"[^\w\s-]", "", text).strip()[:max_len]
+    text = re.sub(r"[\s_]+", "-", text)
+    return text.strip("-") or "recording"
 
 
-def get_call_dir(started_at: str, title: str | None = None) -> Path:
-    """Retourne le dossier d'un call : 2026-03-03_14h30_Sprint-Planning/"""
-    # started_at format ISO: 2026-03-03T14:30:45
-    date_part = started_at[:10]       # 2026-03-03
-    time_part = started_at[11:16]     # 14:30
-    time_clean = time_part.replace(":", "h")  # 14h30
-
-    folder_name = f"{date_part}_{time_clean}"
+def recording_dir(data_dir: Path, started_at: datetime, title: str | None = None, create: bool = True) -> Path:
+    name = started_at.strftime("%Y-%m-%d_%Hh%M")
     if title:
-        folder_name += f"_{_slugify(title)}"
-
-    d = settings.data_dir / folder_name
-    d.mkdir(parents=True, exist_ok=True)
+        name += f"_{slugify(title)}"
+    d = data_dir / name
+    if d.exists() and create:
+        # Collision (deux enregistrements à la même minute) : suffixe
+        i = 2
+        while (data_dir / f"{name}-{i}").exists():
+            i += 1
+        d = data_dir / f"{name}-{i}"
+    if create:
+        d.mkdir(parents=True, exist_ok=True)
     return d
 
 
-def get_transcript_path(started_at: str, title: str | None = None) -> Path:
-    """Chemin du fichier transcript (.txt)."""
-    return get_call_dir(started_at, title) / "transcript.txt"
+def transcript_markdown(rec: Recording, segments: list[Segment]) -> str:
+    lines = [f"# Transcript — {rec.display_title}", "", f"> {rec.started_at:%Y-%m-%d %H:%M} · {rec.duration_text} · {(rec.language or '?').upper()}", ""]
+    for s in segments:
+        speaker = f"**{s.speaker}** : " if s.speaker else ""
+        lines.append(f"`{format_timestamp(s.start)}` {speaker}{s.text}")
+    return "\n".join(lines) + "\n"
 
 
-def get_summary_path(started_at: str, title: str | None = None) -> Path:
-    """Chemin du fichier résumé (.md)."""
-    return get_call_dir(started_at, title) / "summary.md"
+def transcript_plain(segments: list[Segment]) -> str:
+    """Format compact pour le prompt Claude."""
+    out = []
+    for s in segments:
+        speaker = s.speaker or "Speaker"
+        out.append(f"[{format_timestamp(s.start)}] {speaker}: {s.text}")
+    return "\n".join(out)
 
 
-def get_pdf_path(started_at: str, title: str | None = None) -> Path:
-    """Chemin du fichier PDF (.pdf)."""
-    return get_call_dir(started_at, title) / "rapport.pdf"
+def summary_markdown(rec: Recording, summary: Summary, segments: list[Segment] | None = None) -> str:
+    parts = [f"# {rec.display_title}", f"> {rec.started_at:%Y-%m-%d %H:%M} · {rec.duration_text} · {(rec.language or '?').upper()}"]
+    if rec.project or rec.tags:
+        meta = []
+        if rec.project:
+            meta.append(f"Projet : {rec.project}")
+        if rec.tags:
+            meta.append("Tags : " + ", ".join(rec.tags))
+        parts.append("> " + " · ".join(meta))
+    parts += ["", "## TL;DR", summary.tldr, ""]
+    if summary.key_points:
+        parts.append("## Points clés")
+        parts += [f"- {p}" for p in summary.key_points]
+        parts.append("")
+    if summary.decisions:
+        parts.append("## Décisions")
+        parts += [f"- {d}" for d in summary.decisions]
+        parts.append("")
+    if summary.actions:
+        parts.append("## Actions")
+        parts += [f"- [{'x' if a.done else ' '}] {a.display}" for a in summary.actions]
+        parts.append("")
+    if segments:
+        parts += ["---", "", "<details><summary>Transcript complet</summary>", "", "```", transcript_plain(segments), "```", "", "</details>", ""]
+    return "\n".join(parts)
 
 
-def get_audio_path(started_at: str, title: str | None = None, ext: str = "wav") -> Path:
-    """Chemin du fichier audio."""
-    return get_call_dir(started_at, title) / f"audio.{ext}"
-
-
-def save_transcript_file(started_at: str, title: str | None, segments: list[dict]) -> Path:
-    """Sauvegarde le transcript en fichier texte lisible."""
-    path = get_transcript_path(started_at, title)
-    lines = []
-    for seg in segments:
-        time_str = f"{int(seg['start'] // 60):02d}:{int(seg['start'] % 60):02d}"
-        speaker = seg.get("speaker") or "Speaker"
-        lines.append(f"[{time_str}] {speaker}: {seg['text']}")
-    path.write_text("\n".join(lines), encoding="utf-8")
+def write_meta(rec: Recording, summary: Summary | None = None) -> Path:
+    data = {
+        "id": rec.id,
+        "title": rec.title,
+        "source": str(rec.source),
+        "status": str(rec.status),
+        "started_at": rec.started_at.isoformat(timespec="seconds"),
+        "ended_at": rec.ended_at.isoformat(timespec="seconds") if rec.ended_at else None,
+        "duration_s": rec.duration_s,
+        "language": rec.language,
+        "project": rec.project,
+        "tags": rec.tags,
+        "notes": rec.notes,
+        "audio": str(rec.audio_path.name),
+        "summary_model": summary.model if summary else None,
+    }
+    path = rec.dir_path / META_NAME
+    rec.dir_path.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     return path
 
 
-def save_summary_file(started_at: str, title: str | None, summary_md: str) -> Path:
-    """Sauvegarde le résumé en Markdown."""
-    path = get_summary_path(started_at, title)
-    path.write_text(summary_md, encoding="utf-8")
+def write_text(path: Path, content: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
     return path

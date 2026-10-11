@@ -1,50 +1,69 @@
-"""Configuration centralisée Noter."""
+"""Configuration centralisée.
+
+Priorité : variables d'environnement NOTER_* > fichier ~/Noter/.env > défauts.
+NOTER_HOME déplace tout (données, DB, .env) — utile pour les tests.
+"""
 from __future__ import annotations
 
+import os
 import platform
 from pathlib import Path
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def noter_home() -> Path:
+    return Path(os.environ.get("NOTER_HOME", "~/Noter")).expanduser()
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="NOTER_",
-        env_file=".env",
+        env_file=(noter_home() / ".env", ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
-    # Claude API (lu aussi sans préfixe via ANTHROPIC_API_KEY)
-    anthropic_api_key: str = ""
+    # Claude
+    anthropic_api_key: str = Field(default="", validation_alias="ANTHROPIC_API_KEY")
+    claude_model: str = "claude-opus-5-5"
+    claude_effort: str = "medium"
+    auto_summarize: bool = True
 
     # Whisper
     whisper_model: str = "large-v3"
+    whisper_language: str | None = None  # None = auto-détection
+    diarize: bool = False
 
-    # Storage
-    data_dir: Path = Path.home() / "Noter" / "recordings"
-    db_path: Path = Path.home() / "Noter" / "noter.db"
-
-    # Server
-    server_port: int = 9876
-    server_host: str = "0.0.0.0"
+    # Stockage
+    data_dir: Path = Field(default_factory=lambda: noter_home() / "recordings")
+    db_path: Path = Field(default_factory=lambda: noter_home() / "noter.db")
+    log_path: Path = Field(default_factory=lambda: noter_home() / "noter.log")
 
     # Audio
     sample_rate: int = 48000
-    channels: int = 1
 
-    # Diarisation (lourd sur CPU Intel, rapide sur Apple Silicon)
-    diarize: bool = False
+    # Jobs
+    job_max_attempts: int = 3
 
-    @field_validator("data_dir", "db_path", mode="before")
+    @field_validator("data_dir", "db_path", "log_path", mode="before")
     @classmethod
-    def expand_path(cls, v):
+    def _expand(cls, v):
         return Path(v).expanduser()
 
     @property
     def is_apple_silicon(self) -> bool:
         return platform.machine() == "arm64" and platform.system() == "Darwin"
 
+    @property
+    def is_macos(self) -> bool:
+        return platform.system() == "Darwin"
 
-settings = Settings()
+
+def load_settings() -> Settings:
+    """Construit un Settings frais (relit l'env et le .env)."""
+    return Settings()
+
+
+settings = load_settings()

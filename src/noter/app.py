@@ -1,272 +1,127 @@
-"""Noter — App menu bar macOS."""
+"""App menu bar macOS (rumps). Client léger du Service — remplacée par l'UI Qt en phase 2."""
 from __future__ import annotations
 
 import logging
-import os
+import subprocess
 import threading
-import time
-from pathlib import Path
 
-# Charger le .env AVANT tout import de config
-from dotenv import load_dotenv
-load_dotenv(Path(__file__).parent.parent.parent / ".env")
+from noter.config import load_settings
+from noter.logging_setup import setup_logging
+from noter.models import Job, format_timestamp
 
-import rumps
-
-from noter.audio.devices import find_blackhole, find_default_mic
-from noter.audio.recorder import Recorder, save_recording, run_pipeline
-from noter.config import settings
-from noter.storage.database import get_db
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
 logger = logging.getLogger("noter.app")
 
-TITLE_IDLE = ""
-TITLE_RECORDING = "REC"
-TITLE_PROCESSING = "..."
 
-ICON_PATH = Path(__file__).parent.parent.parent / "icon.png"
+def main() -> None:
+    settings = load_settings()
+    setup_logging(settings.log_path, console=False)
 
+    import rumps
 
-class NoterApp(rumps.App):
-    def __init__(self):
-        icon = str(ICON_PATH) if ICON_PATH.exists() else None
-        super().__init__(
-            name="Noter",
-            title=TITLE_IDLE,
-            icon=icon,
-            template=True,
-            quit_button=None,
-        )
+    from noter import notify
+    from noter.service import Service
 
-        self._recorder: Recorder | None = None
-        self._record_thread: threading.Thread | None = None
-        self._server_thread: threading.Thread | None = None
-        self._pending_refresh = threading.Event()
+    class NoterApp(rumps.App):
+        def __init__(self):
+            super().__init__(name="Noter", title="", icon=_icon_path(), template=True, quit_button=None)
+            self.svc = Service(settings)
+            self.svc.start()
+            self.svc.jobs.subscribe(self._on_job)
+            self._dirty = threading.Event()
 
-        # Menu items
-        self._record_system = rumps.MenuItem("Enregistrer (Mic + Système)", callback=self._on_record_system)
-        self._record_mic = rumps.MenuItem("Enregistrer (Mic seul)", callback=self._on_record_mic)
-        self._stop_btn = rumps.MenuItem("Arrêter", callback=self._on_stop)
-        self._stop_btn.set_callback(None)  # Grisé par défaut
+            self.m_rec_sys = rumps.MenuItem("Enregistrer (micro + système)", callback=lambda _: self._start(True))
+            self.m_rec_mic = rumps.MenuItem("Enregistrer (micro seul)", callback=lambda _: self._start(False))
+            self.m_stop = rumps.MenuItem("Arrêter l'enregistrement", callback=self._stop)
+            self.m_stop.set_callback(None)
+            self.m_recent = rumps.MenuItem("Derniers enregistrements")
+            self.m_jobs = rumps.MenuItem("Traitement : inactif")
+            self.m_jobs.set_callback(None)
+            self.menu = [
+                self.m_rec_sys, self.m_rec_mic, self.m_stop, None,
+                self.m_recent, None,
+                rumps.MenuItem("Ouvrir le dossier Noter", callback=lambda _: subprocess.run(["open", str(settings.data_dir)])),
+                self.m_jobs, None,
+                rumps.MenuItem("Quitter", callback=self._quit),
+            ]
+            self._refresh_recent()
 
-        self._sep1 = rumps.separator
+        # ─── Actions ────────────────────────────────────────────────
 
-        self._recordings_menu = rumps.MenuItem("Derniers enregistrements")
-        self._refresh_recordings()
-
-        self._sep2 = rumps.separator
-
-        self._server_status = rumps.MenuItem(f"Serveur :{settings.server_port}")
-        self._server_status.set_callback(None)  # Non cliquable, juste informatif
-
-        self._sep3 = rumps.separator
-
-        self._quit_btn = rumps.MenuItem("Quitter", callback=self._on_quit)
-
-        self.menu = [
-            self._record_system,
-            self._record_mic,
-            self._stop_btn,
-            self._sep1,
-            self._recordings_menu,
-            self._sep2,
-            self._server_status,
-            self._sep3,
-            self._quit_btn,
-        ]
-
-        # Démarrer le serveur automatiquement
-        self._start_server()
-
-    # ─── Recording ──────────────────────────────────────────────
-
-    def _start_recording(self, mode: str):
-        """Lance un enregistrement en background."""
-        if self._recorder and self._recorder.is_recording:
-            rumps.notification("Noter", "", "Un enregistrement est déjà en cours")
-            return
-
-        try:
-            self._recorder = Recorder(mode=mode)
-            self._recorder.start_async()
-        except RuntimeError as e:
-            rumps.notification("Noter", "Erreur", str(e))
-            self._recorder = None
-            return
-
-        # UI : mode enregistrement
-        self._record_system.set_callback(None)
-        self._record_mic.set_callback(None)
-        self._stop_btn.set_callback(self._on_stop)
-        self.title = "REC 00:00"
-
-        rumps.notification("Noter", "Enregistrement démarré", f"Mode: {mode}")
-
-    def _on_record_system(self, sender):
-        self._start_recording("system+mic")
-
-    def _on_record_mic(self, sender):
-        self._start_recording("mic_only")
-
-    def _on_stop(self, sender):
-        """Arrête l'enregistrement et lance le pipeline."""
-        if not self._recorder or not self._recorder.is_recording:
-            return
-
-        recorder = self._recorder
-        self._recorder = None
-
-        # Stop recording
-        recorder.stop()
-        duration = recorder.elapsed
-        dur_str = f"{int(duration // 60)}:{int(duration % 60):02d}"
-
-        # UI : mode processing
-        self.title = "Noter..."
-        self._stop_btn.set_callback(None)
-
-        rumps.notification("Noter", f"Enregistrement terminé ({dur_str})", "Transcription en cours...")
-
-        # Sauvegarder tout de suite, puis pipeline en background
-        try:
-            recording_id = save_recording(recorder)
-        except Exception as e:
-            logger.error(f"Erreur sauvegarde: {e}")
-            rumps.notification("Noter", "Erreur", str(e)[:100])
-            self._reset_ui()
-            return
-
-        # Réactiver l'UI immédiatement pour pouvoir relancer un enregistrement
-        self._reset_ui()
-
-        def pipeline():
+        def _start(self, with_system: bool):
             try:
-                logger.info(f"Pipeline démarré: {recording_id[:8]}")
-                run_pipeline(recording_id)
-                rumps.notification("Noter", "Résumé prêt", f"Enregistrement {recording_id[:8]} traité")
-                logger.info(f"Pipeline terminé: {recording_id[:8]}")
-            except Exception as e:
-                logger.error(f"Erreur pipeline: {e}")
-                rumps.notification("Noter", "Erreur", str(e)[:100])
-            finally:
-                self._pending_refresh.set()
-
-        threading.Thread(target=pipeline, daemon=True).start()
-
-    def _reset_ui(self):
-        """Remet l'UI en mode idle."""
-        self.title = TITLE_IDLE
-        self._record_system.set_callback(self._on_record_system)
-        self._record_mic.set_callback(self._on_record_mic)
-        self._stop_btn.set_callback(None)
-
-    # ─── Timer : mise à jour durée ──────────────────────────────
-
-    @rumps.timer(1)
-    def _update_timer(self, sender):
-        """Met à jour le titre + rafraîchit le menu quand un pipeline finit."""
-        if self._recorder and self._recorder.is_recording:
-            elapsed = self._recorder.elapsed
-            minutes = int(elapsed // 60)
-            seconds = int(elapsed % 60)
-            self.title = f"REC {minutes:02d}:{seconds:02d}"
-
-        if self._pending_refresh.is_set():
-            self._pending_refresh.clear()
-            self._refresh_recordings()
-
-    # ─── Recordings list ────────────────────────────────────────
-
-    def _refresh_recordings(self):
-        """Rafraîchit le sous-menu des derniers enregistrements."""
-        try:
-            # Vider le sous-menu existant
-            keys_to_remove = list(self._recordings_menu.keys())
-            for key in keys_to_remove:
-                del self._recordings_menu[key]
-
-            db = get_db()
-            rows = db.execute(
-                "SELECT r.id, r.title, r.started_at, r.duration_s, r.mode, s.tldr "
-                "FROM recordings r LEFT JOIN summaries s ON r.id = s.recording_id "
-                "ORDER BY r.started_at DESC LIMIT 10"
-            ).fetchall()
-
-            if not rows:
-                self._recordings_menu.add(rumps.MenuItem("Aucun enregistrement"))
+                rec = self.svc.start_recording(with_system_audio=with_system)
+            except Exception as e:  # noqa: BLE001
+                rumps.alert("Noter", str(e))
                 return
+            self.m_rec_sys.set_callback(None)
+            self.m_rec_mic.set_callback(None)
+            self.m_stop.set_callback(self._stop)
+            self.title = "● 00:00"
+            notify.notify("Noter", f"Enregistrement démarré ({rec.source})")
 
-            for row in rows:
-                rid, title, started, duration, mode, tldr = row
-                dur_str = f"{int((duration or 0) // 60)}min" if duration else "?"
-                time_str = started[11:16] if started and len(started) > 16 else "?"
-                label = f"{time_str} — {title or mode} [{dur_str}]"
-                item = rumps.MenuItem(label)
-                if tldr:
-                    item.set_callback(lambda s, t=tldr, r=rid: self._show_summary(t, r))
-                self._recordings_menu.add(item)
-        except Exception as e:
-            logger.error(f"Erreur refresh recordings: {e}")
-
-    def _show_summary(self, tldr: str, recording_id: str):
-        """Affiche le résumé dans une alerte."""
-        rumps.alert(
-            title=f"Résumé — {recording_id[:8]}",
-            message=tldr[:500],
-            ok="OK",
-        )
-
-    # ─── Server (auto-start) ─────────────────────────────────────
-
-    def _start_server(self):
-        """Lance le serveur FastAPI automatiquement au démarrage."""
-        self._server_thread = threading.Thread(target=self._run_server, daemon=True)
-        self._server_thread.start()
-        logger.info(f"Serveur démarré sur le port {settings.server_port}")
-
-    def _run_server(self):
-        """Lance le serveur FastAPI en background."""
-        import uvicorn
-        uvicorn.run(
-            "noter.server.api:api",
-            host=settings.server_host,
-            port=settings.server_port,
-            log_level="warning",
-        )
-
-    # ─── Quit ───────────────────────────────────────────────────
-
-    def _on_quit(self, sender):
-        """Quitte l'app proprement."""
-        if self._recorder and self._recorder.is_recording:
-            response = rumps.alert(
-                title="Enregistrement en cours",
-                message="Un enregistrement est en cours. Arrêter et quitter ?",
-                ok="Quitter",
-                cancel="Annuler",
-            )
-            if response != 1:
+        def _stop(self, _):
+            if not self.svc.is_recording:
                 return
-            self._recorder.stop()
-            save_recording(self._recorder)
+            rec = self.svc.stop_recording()
+            self.m_rec_sys.set_callback(lambda _: self._start(True))
+            self.m_rec_mic.set_callback(lambda _: self._start(False))
+            self.m_stop.set_callback(None)
+            self.title = ""
+            notify.notify("Noter", f"Enregistré ({rec.duration_text}) — traitement en cours")
+            self._dirty.set()
 
-        rumps.quit_application()
+        def _quit(self, _):
+            if self.svc.is_recording:
+                if rumps.alert("Enregistrement en cours", "Arrêter et quitter ?", ok="Quitter", cancel="Annuler") != 1:
+                    return
+            self.svc.stop()
+            rumps.quit_application()
+
+        # ─── Rafraîchissement ───────────────────────────────────────
+
+        def _on_job(self, job: Job):
+            self._dirty.set()
+
+        @rumps.timer(1)
+        def _tick(self, _):
+            if self.svc.is_recording and self.svc.recorder:
+                self.title = f"● {format_timestamp(self.svc.recorder.elapsed)}"
+            cur = self.svc.jobs.current
+            pending = self.svc.repo.pending_job_count()
+            self.m_jobs.title = f"Traitement : {cur.kind} ({pending} en file)" if cur else "Traitement : inactif"
+            if self._dirty.is_set():
+                self._dirty.clear()
+                self._refresh_recent()
+
+        def _refresh_recent(self):
+            for k in list(self.m_recent.keys()):
+                del self.m_recent[k]
+            recs = self.svc.repo.list_recordings(limit=10)
+            if not recs:
+                self.m_recent.add(rumps.MenuItem("Aucun enregistrement"))
+                return
+            for r in recs:
+                item = rumps.MenuItem(f"{r.started_at:%d/%m %H:%M} — {r.display_title} [{r.duration_text}] · {r.status}")
+                item.set_callback(lambda _, d=r.dir_path: subprocess.run(["open", str(d)]))
+                self.m_recent.add(item)
+
+    try:
+        from AppKit import NSApplication
+
+        NSApplication.sharedApplication().setActivationPolicy_(1)  # pas d'icône Dock
+    except Exception:  # noqa: BLE001
+        pass
+
+    NoterApp().run()
 
 
-def main():
-    """Point d'entrée de l'app menu bar."""
-    # S'assurer que le dossier data existe
-    settings.data_dir.mkdir(parents=True, exist_ok=True)
-    # Initialiser la DB
-    get_db()
+def _icon_path() -> str | None:
+    from pathlib import Path
 
-    # Cacher l'icône Python du Dock
-    from AppKit import NSApplication
-    NSApplication.sharedApplication().setActivationPolicy_(1)  # NSApplicationActivationPolicyAccessory
-
-    app = NoterApp()
-    app.run()
+    for p in (Path(__file__).resolve().parents[2] / "icon.png", Path(__file__).parent / "icon.png"):
+        if p.exists():
+            return str(p)
+    return None
 
 
 if __name__ == "__main__":

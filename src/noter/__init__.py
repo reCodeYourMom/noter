@@ -1,3 +1,3 @@
-"""Noter — Plaud maison. Enregistre, transcrit et résume tes calls."""
+"""Noter — enregistre, transcrit et résume tes calls, 100 % local."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

@@ -1,14 +1,14 @@
-"""Génération de rapports PDF premium pour les enregistrements."""
+"""Rapport PDF (fpdf2, polices intégrées Helvetica/Courier)."""
 from __future__ import annotations
 
 from pathlib import Path
 
 from fpdf import FPDF
 
+from noter.models import Recording, Segment, Summary, format_timestamp
 
-class NoterPDF(FPDF):
-    """PDF avec header/footer custom."""
 
+class _Doc(FPDF):
     def __init__(self, title: str):
         super().__init__()
         self._doc_title = title
@@ -17,7 +17,7 @@ class NoterPDF(FPDF):
         if self.page_no() > 1:
             self.set_font("Helvetica", "I", 8)
             self.set_text_color(150, 150, 150)
-            self.cell(0, 6, self._doc_title, align="L")
+            self.cell(0, 6, _safe(self._doc_title), align="L")
             self.ln(10)
 
     def footer(self):
@@ -28,131 +28,88 @@ class NoterPDF(FPDF):
 
 
 def _safe(text: str) -> str:
-    """Nettoie le texte pour fpdf2 (latin-1 safe)."""
-    return text.encode("latin-1", "replace").decode("latin-1")
+    return (text or "").encode("latin-1", "replace").decode("latin-1")
 
 
-def generate_pdf(
-    output_path: Path,
-    title: str,
-    date_str: str,
-    duration_str: str,
-    language: str,
-    tldr: str,
-    key_points: list[str],
-    decisions: list[str],
-    actions: list[str],
-    transcript: str,
-) -> Path:
-    """Génère un rapport PDF premium."""
-    pdf = NoterPDF(title)
+def generate_pdf(output_path: Path, rec: Recording, summary: Summary, segments: list[Segment] | None = None) -> Path:
+    pdf = _Doc(rec.display_title)
     pdf.alias_nb_pages()
     pdf.set_auto_page_break(auto=True, margin=20)
     pdf.add_page()
+    w = pdf.w - 2 * pdf.l_margin
 
-    W = pdf.w - 2 * pdf.l_margin
-
-    # ─── Titre ────────────────────────────────────────────
-    pdf.set_font("Helvetica", "B", 24)
+    pdf.set_font("Helvetica", "B", 22)
     pdf.set_text_color(20, 20, 20)
-    pdf.multi_cell(W, 11, _safe(title))
+    pdf.multi_cell(w, 10, _safe(rec.display_title))
     pdf.ln(2)
-
-    # Ligne épaisse
     pdf.set_draw_color(20, 20, 20)
     pdf.set_line_width(0.8)
     y = pdf.get_y()
-    pdf.line(pdf.l_margin, y, pdf.l_margin + W, y)
+    pdf.line(pdf.l_margin, y, pdf.l_margin + w, y)
     pdf.ln(6)
 
-    # Métadonnées
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(120, 120, 120)
-    meta = "   |   ".join(filter(None, [
-        f"Date : {date_str}" if date_str else "",
-        f"Duree : {duration_str}" if duration_str else "",
-        f"Langue : {language}" if language else "",
-    ]))
-    pdf.cell(0, 5, _safe(meta))
+    meta = [f"Date : {rec.started_at:%d/%m/%Y %H:%M}", f"Duree : {rec.duration_text}", f"Langue : {(rec.language or '?').upper()}"]
+    if rec.project:
+        meta.append(f"Projet : {rec.project}")
+    if rec.tags:
+        meta.append("Tags : " + ", ".join(rec.tags))
+    pdf.cell(0, 5, _safe("   |   ".join(meta)))
     pdf.ln(12)
 
-    # ─── TL;DR ────────────────────────────────────────────
-    _tldr_block(pdf, tldr, W)
+    _tldr_block(pdf, summary.tldr, w)
     pdf.ln(8)
 
-    # ─── Sections ─────────────────────────────────────────
-    if key_points:
-        _section_title(pdf, "POINTS CLES", W)
-        for p in key_points:
-            _bullet(pdf, p, W)
+    if summary.key_points:
+        _section(pdf, "POINTS CLES", w)
+        for p in summary.key_points:
+            _bullet(pdf, p, w)
+        pdf.ln(6)
+    if summary.decisions:
+        _section(pdf, "DECISIONS", w)
+        for d in summary.decisions:
+            _bullet(pdf, d, w, bullet=">")
+        pdf.ln(6)
+    if summary.actions:
+        _section(pdf, "ACTIONS", w)
+        for a in summary.actions:
+            _action(pdf, a.display, w, a.done)
         pdf.ln(6)
 
-    if decisions:
-        _section_title(pdf, "DECISIONS", W)
-        for d in decisions:
-            _bullet(pdf, d, W, bullet=">")
-        pdf.ln(6)
-
-    if actions:
-        _section_title(pdf, "ACTIONS", W)
-        for a in actions:
-            _action_item(pdf, a, W)
-        pdf.ln(6)
-
-    # ─── Transcript ───────────────────────────────────────
-    if transcript and transcript.strip():
+    if segments:
         pdf.add_page()
-        _section_title(pdf, "TRANSCRIPT", W)
+        _section(pdf, "TRANSCRIPT", w)
         pdf.ln(2)
-        for line in transcript.strip().split("\n"):
-            _transcript_line(pdf, line, W)
+        for s in segments:
+            _transcript_line(pdf, format_timestamp(s.start), s.speaker or "", s.text, w)
 
-    # ─── Branding ─────────────────────────────────────────
     pdf.ln(10)
-    pdf.set_draw_color(220, 220, 220)
-    pdf.set_line_width(0.3)
-    pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + W, pdf.get_y())
-    pdf.ln(4)
     pdf.set_font("Helvetica", "I", 8)
     pdf.set_text_color(200, 200, 200)
     pdf.cell(0, 5, "Rapport genere par Noter", align="C")
 
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     pdf.output(str(output_path))
     return output_path
 
 
-def _tldr_block(pdf: FPDF, tldr: str, w: float):
-    """Bloc TL;DR avec fond gris et barre gauche noire."""
-    x = pdf.l_margin
-    y_start = pdf.get_y()
-
-    # Écrire le texte d'abord pour mesurer la hauteur
+def _tldr_block(pdf: FPDF, text: str, w: float):
+    x, y0 = pdf.l_margin, pdf.get_y()
     pdf.set_font("Helvetica", "", 11)
     pdf.set_text_color(30, 30, 30)
     pdf.set_x(x + 10)
-    pdf.multi_cell(w - 16, 7, _safe(tldr))
-    y_end = pdf.get_y() + 4
-
-    block_h = y_end - y_start
-
-    # Dessiner le fond par-dessous (revenir en arrière)
+    pdf.multi_cell(w - 16, 7, _safe(text))
+    h = pdf.get_y() + 4 - y0
     pdf.set_fill_color(245, 246, 248)
-    pdf.rect(x, y_start - 2, w, block_h, "F")
-
-    # Barre gauche noire
+    pdf.rect(x, y0 - 2, w, h, "F")
     pdf.set_fill_color(20, 20, 20)
-    pdf.rect(x, y_start - 2, 3, block_h, "F")
-
-    # Réécrire le texte par-dessus le fond
-    pdf.set_y(y_start + 2)
-    pdf.set_x(x + 10)
-    pdf.set_font("Helvetica", "", 11)
-    pdf.set_text_color(30, 30, 30)
-    pdf.multi_cell(w - 16, 7, _safe(tldr))
+    pdf.rect(x, y0 - 2, 3, h, "F")
+    pdf.set_xy(x + 10, y0 + 2)
+    pdf.multi_cell(w - 16, 7, _safe(text))
 
 
-def _section_title(pdf: FPDF, title: str, w: float):
-    """Titre de section uppercase avec ligne."""
+def _section(pdf: FPDF, title: str, w: float):
     pdf.set_font("Helvetica", "B", 11)
     pdf.set_text_color(20, 20, 20)
     pdf.cell(0, 8, title)
@@ -164,72 +121,36 @@ def _section_title(pdf: FPDF, title: str, w: float):
 
 
 def _bullet(pdf: FPDF, text: str, w: float, bullet: str = "-"):
-    """Bullet point."""
     pdf.set_font("Helvetica", "", 10)
     pdf.set_text_color(50, 50, 50)
-    x = pdf.get_x()
-    pdf.set_x(x + 4)
+    pdf.set_x(pdf.l_margin + 4)
     pdf.cell(6, 6, bullet)
     pdf.multi_cell(w - 14, 6, _safe(text))
     pdf.ln(1)
 
 
-def _action_item(pdf: FPDF, text: str, w: float):
-    """Action item avec checkbox."""
+def _action(pdf: FPDF, text: str, w: float, done: bool):
     pdf.set_font("Helvetica", "", 10)
     pdf.set_text_color(50, 50, 50)
-    x = pdf.get_x()
-    y = pdf.get_y()
-
-    # Checkbox dessinée
+    x, y = pdf.l_margin, pdf.get_y()
     pdf.set_draw_color(180, 180, 180)
     pdf.set_line_width(0.4)
-    pdf.rect(x + 4, y + 1, 4, 4)
-
+    pdf.rect(x + 4, y + 1, 4, 4, "DF" if done else "D")
     pdf.set_x(x + 12)
     pdf.multi_cell(w - 16, 6, _safe(text))
-
-    # Séparation légère
-    pdf.set_draw_color(240, 240, 240)
-    pdf.set_line_width(0.2)
-    pdf.line(pdf.l_margin + 4, pdf.get_y() + 1, pdf.l_margin + w - 4, pdf.get_y() + 1)
-    pdf.ln(3)
+    pdf.ln(2)
 
 
-def _transcript_line(pdf: FPDF, line: str, w: float):
-    """Une ligne de transcript."""
-    if not line.strip():
-        return
-
-    time_str = ""
-    speaker = ""
-    text = line
-
-    if line.startswith("[") and "] " in line:
-        time_str = line[1:line.index("]")]
-        rest = line[line.index("] ") + 2:]
-        if ": " in rest:
-            speaker, text = rest.split(": ", 1)
-        else:
-            text = rest
-
+def _transcript_line(pdf: FPDF, time_str: str, speaker: str, text: str, w: float):
     if pdf.get_y() > pdf.h - 25:
         pdf.add_page()
-
-    x = pdf.l_margin
-
-    # Time
     pdf.set_font("Courier", "", 7.5)
     pdf.set_text_color(170, 170, 170)
-    pdf.set_xy(x, pdf.get_y())
+    pdf.set_x(pdf.l_margin)
     pdf.cell(18, 5, time_str)
-
-    # Speaker
     pdf.set_font("Helvetica", "B", 8)
     pdf.set_text_color(100, 100, 100)
-    pdf.cell(28, 5, _safe(speaker))
-
-    # Text
+    pdf.cell(28, 5, _safe(speaker[:16]))
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(60, 60, 60)
     pdf.multi_cell(w - 46, 5, _safe(text))

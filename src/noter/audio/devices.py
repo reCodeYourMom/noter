@@ -1,101 +1,59 @@
-"""Détection et listing des devices audio (BlackHole, micro)."""
+"""Détection des périphériques audio (micro, BlackHole). Import de sounddevice paresseux."""
 from __future__ import annotations
 
 from dataclasses import dataclass
-
-import sounddevice as sd
-from rich.console import Console
-from rich.table import Table
-
-console = Console()
 
 
 @dataclass
 class AudioDevice:
     index: int
     name: str
-    max_input_channels: int
-    max_output_channels: int
+    input_channels: int
     default_samplerate: float
-    is_blackhole: bool
+
+    @property
+    def is_blackhole(self) -> bool:
+        return "blackhole" in self.name.lower()
 
 
-def get_all_devices() -> list[AudioDevice]:
-    """Retourne tous les devices audio d'entrée disponibles."""
-    devices = sd.query_devices()
-    result = []
-    for i, d in enumerate(devices):
+def _sd():
+    import sounddevice as sd
+
+    return sd
+
+
+def input_devices() -> list[AudioDevice]:
+    sd = _sd()
+    out = []
+    for i, d in enumerate(sd.query_devices()):
         if d["max_input_channels"] > 0:
-            result.append(AudioDevice(
-                index=i,
-                name=d["name"],
-                max_input_channels=d["max_input_channels"],
-                max_output_channels=d["max_output_channels"],
-                default_samplerate=d["default_samplerate"],
-                is_blackhole="blackhole" in d["name"].lower(),
-            ))
-    return result
+            out.append(AudioDevice(i, d["name"], d["max_input_channels"], d["default_samplerate"]))
+    return out
 
 
 def find_blackhole() -> AudioDevice | None:
-    """Trouve le device BlackHole (loopback audio système)."""
-    for d in get_all_devices():
-        if d.is_blackhole:
-            return d
-    return None
+    return next((d for d in input_devices() if d.is_blackhole), None)
 
 
-def find_default_mic() -> AudioDevice | None:
-    """Trouve le micro par défaut."""
-    default_input = sd.query_devices(kind="input")
-    if default_input:
+def default_mic() -> AudioDevice | None:
+    sd = _sd()
+    try:
         idx = sd.default.device[0]
+        if idx is None or idx < 0:
+            return None
         d = sd.query_devices(idx)
-        return AudioDevice(
-            index=idx,
-            name=d["name"],
-            max_input_channels=d["max_input_channels"],
-            max_output_channels=d["max_output_channels"],
-            default_samplerate=d["default_samplerate"],
-            is_blackhole="blackhole" in d["name"].lower(),
-        )
-    return None
+    except Exception:  # noqa: BLE001
+        return None
+    if d["max_input_channels"] <= 0:
+        return None
+    return AudioDevice(idx, d["name"], d["max_input_channels"], d["default_samplerate"])
 
 
-def list_devices():
-    """Affiche les devices audio dans un tableau Rich."""
-    devices = get_all_devices()
-    blackhole = find_blackhole()
-    default_mic = find_default_mic()
-
-    table = Table(title="Devices audio (entrée)")
-    table.add_column("Index", justify="right", style="cyan")
-    table.add_column("Nom")
-    table.add_column("Channels", justify="right")
-    table.add_column("Sample Rate", justify="right")
-    table.add_column("Rôle")
-
-    for d in devices:
-        role = ""
-        if d.is_blackhole:
-            role = "[green]BlackHole (système)[/green]"
-        elif default_mic and d.index == default_mic.index:
-            role = "[blue]Micro par défaut[/blue]"
-
-        table.add_row(
-            str(d.index),
-            d.name,
-            str(d.max_input_channels),
-            f"{d.default_samplerate:.0f}",
-            role,
-        )
-
-    console.print(table)
-
-    if not blackhole:
-        console.print(
-            "\n[yellow]BlackHole non détecté.[/yellow] "
-            "Installe-le avec : [bold]brew install blackhole-2ch[/bold]\n"
-            "Puis crée un 'Multi-Output Device' dans Audio MIDI Setup "
-            "pour capturer l'audio système."
-        )
+def supported_samplerate(device: AudioDevice, wanted: int) -> int:
+    """Retourne `wanted` si le device l'accepte, sinon son taux par défaut."""
+    sd = _sd()
+    try:
+        sd.check_input_settings(device=device.index, samplerate=wanted, channels=1)
+        return wanted
+    except Exception:  # noqa: BLE001
+        return int(device.default_samplerate)
