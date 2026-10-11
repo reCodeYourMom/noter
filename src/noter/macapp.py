@@ -1,6 +1,7 @@
 """Bundle Noter.app (macOS) : nom, icône et menu « Noter » dans le Dock au lieu de « Python »."""
 from __future__ import annotations
 
+import os
 import plistlib
 import shutil
 import stat
@@ -17,12 +18,22 @@ def app_path() -> Path:
     return Path.home() / "Applications" / "Noter.app"
 
 
+def _venv_python() -> Path:
+    """Chemin du Python du venv, SANS résoudre le lien symbolique.
+
+    Résoudre `.venv/bin/python` donne le Python de base, qui ne voit pas les paquets du venv.
+    """
+    return Path(os.path.abspath(sys.executable))
+
+
 def _launcher_script() -> str:
-    exe = Path(sys.executable).resolve()
+    exe = _venv_python()
     return f"""#!/bin/bash
-# Lanceur Noter.app → interpréteur du venv
+# Lanceur Noter.app → interpréteur du venv. Les erreurs de démarrage vont dans le log.
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
-exec "{exe}" -m noter.ui.main "$@"
+LOG="${{NOTER_HOME:-$HOME/Noter}}/noter.log"
+mkdir -p "$(dirname "$LOG")"
+exec "{exe}" -m noter.ui.main "$@" >>"$LOG" 2>&1
 """
 
 

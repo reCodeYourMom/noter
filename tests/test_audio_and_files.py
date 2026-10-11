@@ -80,5 +80,11 @@ def test_macapp_bundle(tmp_path, monkeypatch):
     assert plist["CFBundleName"] == "Noter" and plist["CFBundleIconFile"] == "AppIcon"
     assert (app / "Contents" / "Resources" / "AppIcon.icns").exists()
     launcher = app / "Contents" / "MacOS" / "noter"
-    assert launcher.exists() and "noter.ui.main" in launcher.read_text()
+    text = launcher.read_text()
+    assert launcher.exists() and "noter.ui.main" in text
+    # Le lanceur doit viser le Python du venv tel quel, pas sa cible résolue (sinon « No module named noter »)
+    import os
+    import sys
+
+    assert f'"{os.path.abspath(sys.executable)}" -m noter.ui.main' in text
     assert macapp.is_installed() and macapp.uninstall() and not app.exists()
