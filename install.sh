@@ -53,9 +53,9 @@ echo "✓ BlackHole"
 [ -d .venv ] || "$PYTHON" -m venv .venv
 source .venv/bin/activate
 pip install --quiet --upgrade pip
-pip install --quiet -e ".[mac]"
+pip install --quiet -e "."
 if [ "$(uname -m)" = "arm64" ]; then
-    pip install --quiet -e ".[mac,mlx]" || echo "⚠  mlx-whisper non installé — faster-whisper sera utilisé"
+    pip install --quiet -e ".[mlx]" || echo "⚠  mlx-whisper non installé — faster-whisper sera utilisé"
 fi
 echo "✓ Dépendances Python"
 

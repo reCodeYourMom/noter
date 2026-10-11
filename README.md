@@ -33,15 +33,28 @@ Installation manuelle :
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[mac]"           # + ".[mlx]" sur Apple Silicon, ".[diarize]" pour la diarisation
+pip install -e "."                # + ".[mlx]" sur Apple Silicon, ".[diarize]" pour la diarisation
 mkdir -p ~/Noter && cp config.example.env ~/Noter/.env   # puis renseigne ANTHROPIC_API_KEY
 noter doctor
 ```
 
-## Utilisation
+## L'application
+
+`noter-app` ouvre l'app desktop (PySide6) et place une icône dans la barre de menu.
+
+- **Barre de menu** : enregistrer (micro + système ou micro seul), arrêter, état du traitement, rouvrir la fenêtre. Fermer la fenêtre ne quitte pas l'app.
+- **Liste** filtrable par état (tous, en cours, échecs), projet et tag, avec statut coloré, durée et date.
+- **Fiche d'un enregistrement** : titre, projet, tags et notes éditables en place ; résumé (TL;DR, points clés, décisions, actions cochables) ; transcript horodaté synchronisé avec le lecteur audio (double-clic pour écouter un passage, clic droit pour renommer un speaker) ; relancer le traitement ou régénérer le résumé ; ouvrir le dossier ou le PDF ; copier le résumé en Markdown.
+- **Recherche** plein texte dans les transcripts, résumés et titres, avec ouverture directe au bon passage.
+- **Import** par le bouton ou en glissant des fichiers audio dans la fenêtre.
+- **Réglages** (clé API, modèles, langue) écrits dans `~/Noter/.env`.
+
+Raccourcis : `⌘R` enregistrer, `⌘⇧R` micro seul, `⌘.` arrêter, `⌘I` importer, `⌘F` rechercher, `⌘,` réglages.
+
+## Ligne de commande
 
 ```bash
-noter-app                        # app barre de menu (enregistrer / arrêter / derniers calls)
+noter-app                        # app desktop + barre de menu
 noter record -t "Point client"   # enregistre jusqu'à Ctrl+C, puis transcrit + résume
 noter record --mic-only          # réunion physique
 noter import call.m4a -p ACME --tag client
@@ -86,7 +99,7 @@ ruff check .
 pytest
 ```
 
-Les tests tournent sans micro ni modèle : moteurs Whisper et Claude sont remplacés par des doublures (`FakeEngine`, `FakeSummarizer`).
+Les tests tournent sans micro ni modèle : moteurs Whisper et Claude sont remplacés par des doublures (`FakeEngine`, `FakeSummarizer`). Les tests de l'UI utilisent `QT_QPA_PLATFORM=offscreen`.
 
 Architecture :
 
@@ -100,6 +113,7 @@ src/noter/
 ├── transcription/    moteurs Whisper + diarisation
 ├── analyzer/         prompts + Claude (sortie structurée)
 ├── export/           PDF
-├── cli.py · app.py   interfaces
+├── ui/               app desktop PySide6 (fenêtre, détail, lecteur, tray, réglages)
+├── cli.py            ligne de commande
 └── launchd.py        LaunchAgent macOS
 ```
