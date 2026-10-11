@@ -88,3 +88,35 @@ def test_macapp_bundle(tmp_path, monkeypatch):
 
     assert f'"{os.path.abspath(sys.executable)}" -m noter.ui.main' in text
     assert macapp.is_installed() and macapp.uninstall() and not app.exists()
+
+
+def test_decode_to_16k_soundfile_and_av(tmp_path):
+    from noter.audio.decode import WHISPER_RATE, _decode_av, load_audio_16k
+
+    wav = make_wav(tmp_path / "a.wav", seconds=2.0, rate=48000)
+    a = load_audio_16k(wav)
+    assert a.dtype == np.float32 and a.ndim == 1 and abs(len(a) - 2 * WHISPER_RATE) < 50
+    # Chemin PyAV (m4a, mp3…) : appel compatible avec toutes les versions récentes de PyAV
+    b = _decode_av(wav)
+    assert b.dtype == np.float32 and abs(len(b) - 2 * WHISPER_RATE) < 400
+
+
+def test_faster_whisper_engine_gets_decoded_array(tmp_path, monkeypatch):
+    """faster-whisper reçoit un tableau 16 kHz, jamais un chemin (son décodeur casse avec PyAV 19)."""
+    from types import SimpleNamespace
+
+    from noter.transcription.faster_whisper import FasterWhisperEngine
+
+    seen = {}
+
+    class FakeModel:
+        def transcribe(self, audio, **kw):
+            seen["audio"] = audio
+            seg = SimpleNamespace(start=0.0, end=1.0, text=" Bonjour ")
+            return iter([seg]), SimpleNamespace(language="fr")
+
+    eng = FasterWhisperEngine("small")
+    monkeypatch.setattr(eng, "_load", lambda: FakeModel())
+    res = eng.transcribe(make_wav(tmp_path / "c.wav", seconds=1.0, rate=48000))
+    assert isinstance(seen["audio"], np.ndarray) and seen["audio"].dtype == np.float32
+    assert res.language == "fr" and res.segments[0].text == "Bonjour"
