@@ -15,6 +15,12 @@ def main() -> int:
     settings = load_settings()
     setup_logging(settings.log_path, console=False)
 
+    def _excepthook(exc_type, exc, tb):
+        logger.critical("Erreur non rattrapée", exc_info=(exc_type, exc, tb))
+        sys.__excepthook__(exc_type, exc, tb)
+
+    sys.excepthook = _excepthook
+
     from PySide6.QtCore import QTimer
     from PySide6.QtWidgets import QApplication
 
