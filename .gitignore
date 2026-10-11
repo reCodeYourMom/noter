@@ -6,30 +6,21 @@ dist/
 build/
 .venv/
 venv/
+.pytest_cache/
+.ruff_cache/
 
-# Environment
+# Environnement et données locales
 .env
-
-# Database (chaque machine a la sienne)
 *.db
 *.db-shm
 *.db-wal
-
-# Recordings (audio volumineux, pas versionné)
 recordings/
+*.log
 
-# macOS
+# macOS / IDE
 .DS_Store
-*.swp
-
-# IDE
 .vscode/
 .idea/
-
-# Xcode
-NoterApp/NoterApp.xcodeproj/xcuserdata/
-NoterApp/build/
-NoterApp/DerivedData/
 
 # Claude
 .claude/

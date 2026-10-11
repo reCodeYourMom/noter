@@ -1,64 +1,40 @@
-"""Implémentation faster-whisper (Intel + fallback Apple Silicon)."""
+"""faster-whisper (CPU, Intel ou fallback Apple Silicon)."""
 from __future__ import annotations
 
 import logging
-from functools import lru_cache
+from pathlib import Path
 
-from faster_whisper import WhisperModel
-
-from noter.config import settings
-from noter.transcription.engine import Segment
+from noter.models import Segment
+from noter.transcription.base import TranscriptionResult
 
 logger = logging.getLogger(__name__)
 
 
-@lru_cache(maxsize=1)
-def _get_model() -> WhisperModel:
-    """Charge le modèle Whisper une seule fois."""
-    model_name = settings.whisper_model
-    logger.info(f"Chargement faster-whisper '{model_name}'...")
-
-    # Apple Silicon : float32 sur CPU, Intel : int8
-    if settings.is_apple_silicon:
-        compute_type = "float32"
-    else:
-        compute_type = "int8"
-
-    model = WhisperModel(
-        model_name,
-        device="cpu",
-        compute_type=compute_type,
-    )
-    logger.info("Modèle faster-whisper chargé")
-    return model
-
-
 class FasterWhisperEngine:
-    """Transcription via faster-whisper."""
+    name = "faster-whisper"
 
-    def transcribe(self, audio_path: str) -> tuple[list[Segment], str]:
-        """Transcrit un fichier audio. Retourne (segments, langue)."""
-        model = _get_model()
+    def __init__(self, model_name: str, apple_silicon: bool = False):
+        self.model_name = model_name
+        self.compute_type = "float32" if apple_silicon else "int8"
+        self._model = None
 
+    def _load(self):
+        if self._model is None:
+            from faster_whisper import WhisperModel
+
+            logger.info("Chargement faster-whisper '%s' (%s)…", self.model_name, self.compute_type)
+            self._model = WhisperModel(self.model_name, device="cpu", compute_type=self.compute_type)
+        return self._model
+
+    def transcribe(self, audio_path: Path, language: str | None = None) -> TranscriptionResult:
+        model = self._load()
         segments_gen, info = model.transcribe(
-            audio_path,
+            str(audio_path),
             beam_size=5,
-            language=None,  # Auto-detect FR/EN
+            language=language,
             vad_filter=True,
-            vad_parameters=dict(
-                min_silence_duration_ms=500,
-                speech_pad_ms=200,
-            ),
-            word_timestamps=True,
+            vad_parameters={"min_silence_duration_ms": 500, "speech_pad_ms": 200},
         )
-
-        segments = []
-        for seg in segments_gen:
-            segments.append(Segment(
-                start=seg.start,
-                end=seg.end,
-                text=seg.text.strip(),
-            ))
-
-        logger.info(f"Transcription: {info.language}, {info.duration:.0f}s, {len(segments)} segments")
-        return segments, info.language
+        segments = [Segment(start=s.start, end=s.end, text=s.text.strip()) for s in segments_gen if s.text.strip()]
+        logger.info("faster-whisper : %s, %d segments", info.language, len(segments))
+        return TranscriptionResult(segments=segments, language=info.language)
