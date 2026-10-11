@@ -49,7 +49,11 @@ MSG
 fi
 echo "✓ BlackHole"
 
-# 4. Environnement Python
+# 4. Environnement Python (recréé s'il date d'un Python trop ancien)
+if [ -d .venv ] && ! .venv/bin/python -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
+    echo "→ Ancien .venv (Python < 3.11) : recréation…"
+    rm -rf .venv
+fi
 [ -d .venv ] || "$PYTHON" -m venv .venv
 source .venv/bin/activate
 pip install --quiet --upgrade pip
