@@ -131,18 +131,33 @@ class JobQueue:
             else:
                 raise ValueError(f"Job inconnu : {job.kind}")
             done = self.repo.finish_job(job.id, ok=True)
+            if done is None:
+                self._abandoned(job)
+                return
             self._emit(done)
             self._after_success(done)
         except Exception as e:  # noqa: BLE001
+            if self.repo.get_recording(job.recording_id) is None:
+                self._abandoned(job)
+                return
             err = f"{type(e).__name__}: {e}"
             logger.error("Job #%d en erreur : %s\n%s", job.id, err, traceback.format_exc())
             failed = self.repo.finish_job(job.id, ok=False, error=err)
+            if failed is None:
+                self._abandoned(job)
+                return
             self._emit(failed)
             if failed.status == JobStatus.FAILED:
                 self.notify("Noter — échec", f"{job.kind} : {err[:120]}")
         finally:
             with self._lock:
                 self._current = None
+
+    def _abandoned(self, job: Job) -> None:
+        """L'enregistrement a été supprimé pendant le traitement : rien à signaler à l'utilisateur."""
+        logger.info("Job #%d abandonné : enregistrement %s supprimé pendant le traitement", job.id, job.recording_id[:8])
+        job.status = JobStatus.DONE
+        self._emit(job)
 
     def _after_success(self, job: Job) -> None:
         if job.kind == JobKind.TRANSCRIBE:
