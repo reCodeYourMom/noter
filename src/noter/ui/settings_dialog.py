@@ -39,15 +39,19 @@ def write_env(path: Path, updates: dict[str, str]) -> None:
     """Met à jour les clés sans toucher aux commentaires ni à l'ordre."""
     lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
     seen = set()
+    def render(key: str, val: str) -> str:
+        # Valeur vide → ligne commentée : la variable reste absente (défaut), jamais « chaîne vide »
+        return f"{key}={val}" if val != "" else f"# {key}="
+
     for i, line in enumerate(lines):
         m = re.match(r"^\s*#?\s*([A-Za-z_][A-Za-z0-9_]*)\s*=", line)
         if m and m.group(1) in updates:
             key = m.group(1)
-            lines[i] = f"{key}={updates[key]}"
+            lines[i] = render(key, updates[key])
             seen.add(key)
     for key, val in updates.items():
         if key not in seen:
-            lines.append(f"{key}={val}")
+            lines.append(render(key, val))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 

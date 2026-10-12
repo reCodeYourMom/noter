@@ -127,3 +127,22 @@ def test_import_rejects_unknown_format(service, tmp_path):
         service.import_file(bad)
     with pytest.raises(FileNotFoundError):
         service.import_file(Path("/nope/none.wav"))
+
+
+def test_recording_deleted_during_processing(service, wav, settings, summarizer):
+    """Supprimer un enregistrement pendant sa transcription ne doit pas faire planter le worker."""
+    from noter.models import Segment
+    from noter.transcription.base import FakeEngine, TranscriptionResult
+
+    class DeletingEngine(FakeEngine):
+        def transcribe(self, audio_path, language=None):
+            service.delete_recording(rec.id)  # l'utilisateur supprime pendant le traitement
+            return TranscriptionResult(segments=[Segment(0, 1, "x")], language="fr")
+
+    service.pipeline = Pipeline(service.repo, settings, engine=DeletingEngine(), summarizer=summarizer)
+    service.jobs.pipeline = service.pipeline
+    rec = service.import_file(wav)
+    assert service.jobs.run_pending() == 1  # pas d'exception
+    assert service.repo.get_recording(rec.id) is None
+    assert service.repo.list_jobs(recording_id=rec.id) == []
+    assert service.jobs.current is None

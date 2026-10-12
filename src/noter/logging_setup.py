@@ -21,6 +21,6 @@ def setup_logging(log_path: Path, level: int = logging.INFO, console: bool = Tru
         ch.setFormatter(fmt)
         ch.setLevel(logging.WARNING)
         root.addHandler(ch)
-    for noisy in ("httpx", "httpcore", "anthropic", "urllib3", "numba"):
+    for noisy in ("httpx", "httpcore", "httpx2", "httpcore2", "huggingface_hub", "anthropic", "urllib3", "numba", "filelock"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
     root._noter_configured = True  # type: ignore[attr-defined]

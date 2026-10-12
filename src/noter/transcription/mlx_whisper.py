@@ -31,7 +31,8 @@ class MlxWhisperEngine:
         import mlx_whisper
 
         logger.info("Transcription mlx-whisper (%s)…", self.repo)
-        result = mlx_whisper.transcribe(str(audio_path), path_or_hf_repo=self.repo, language=language)
+        kwargs = {"language": language} if language else {}
+        result = mlx_whisper.transcribe(str(audio_path), path_or_hf_repo=self.repo, **kwargs)
         segments = [
             Segment(start=float(s["start"]), end=float(s["end"]), text=s["text"].strip())
             for s in result.get("segments", [])

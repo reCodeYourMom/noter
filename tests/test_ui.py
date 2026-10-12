@@ -159,6 +159,8 @@ def test_env_roundtrip(tmp_path):
     assert env["ANTHROPIC_API_KEY"] == "sk-new" and env["NOTER_WHISPER_MODEL"] == "small"
     assert env["NOTER_CLAUDE_EFFORT"] == "high" and env["AUTRE"] == "1"
     assert p.read_text().startswith("# commentaire\n")
+    write_env(p, {"NOTER_WHISPER_LANGUAGE": ""})
+    assert "NOTER_WHISPER_LANGUAGE" not in read_env(p) and "# NOTER_WHISPER_LANGUAGE=" in p.read_text()
 
 
 def test_single_instance_lock(qapp):
@@ -173,3 +175,25 @@ def test_single_instance_lock(qapp):
     assert second.notify_existing("show")
     _process(qapp, 200)
     assert received == ["show"]
+
+
+def test_console_warns_on_digital_silence(qapp):
+    from datetime import datetime
+    from pathlib import Path
+
+    from noter.models import Recording, Source
+    from noter.ui.widgets.console import RecordingConsole
+
+    c = RecordingConsole()
+    rec = Recording(id="x", source=Source.MAC_MIC, status=RecordingStatus.RECORDING,
+                    started_at=datetime.now(), audio_path=Path("/x"), dir_path=Path("/x"))
+    c.begin(rec, "Micro seul", with_system=False)
+    c.tick(1.0, {"MIC": 0.0})
+    assert c.silence.isHidden()  # trop tôt pour conclure
+    c.tick(3.5, {"MIC": 0.0})
+    assert not c.silence.isHidden()  # silence absolu → avertissement
+    c.tick(4.0, {"MIC": 0.002})
+    assert c.silence.isHidden()  # du son arrive → l'avertissement disparaît
+    c.begin(rec, "Micro seul", with_system=False)
+    c.tick(3.5, {"MIC": 0.0})
+    assert not c.silence.isHidden()

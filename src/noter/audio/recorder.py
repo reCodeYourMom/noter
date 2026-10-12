@@ -31,6 +31,7 @@ class _Stream:
     path: Path
     q: queue.Queue = field(default_factory=lambda: queue.Queue(maxsize=512))
     level: float = 0.0
+    peak: float = 0.0
     frames: int = 0
     overflows: int = 0
 
@@ -116,6 +117,7 @@ class Recorder:
                 s.overflows += 1
             mono = indata.mean(axis=1) if indata.ndim > 1 else indata
             s.level = float(np.sqrt(np.mean(mono**2)))
+            s.peak = max(s.peak, float(np.max(np.abs(mono))) if len(mono) else 0.0)
             try:
                 s.q.put_nowait(mono.copy())
             except queue.Full:
@@ -145,3 +147,9 @@ class Recorder:
             self._stop.set()
         if s.overflows:
             logger.warning("Flux %s : %d overflow(s)", s.label, s.overflows)
+        if s.frames and s.peak == 0.0:
+            logger.warning(
+                "Flux %s : silence absolu sur tout l'enregistrement. Accès au micro refusé ? "
+                "Réglages Système → Confidentialité et sécurité → Micro → autoriser Noter.",
+                s.label,
+            )

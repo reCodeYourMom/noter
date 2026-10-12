@@ -292,6 +292,11 @@ def app_install():
 
     p = macapp.install()
     console.print(f"[green]Noter.app installé[/] : {p}")
+    if not macapp.is_native():
+        console.print(
+            "[yellow]Aucun compilateur C trouvé : lanceur de secours installé, l'accès au micro risque d'être refusé.[/]\n"
+            "Installe les outils développeur (xcode-select --install) puis relance `noter app install`."
+        )
     if is_installed():
         from noter.config import load_settings
         from noter.launchd import install

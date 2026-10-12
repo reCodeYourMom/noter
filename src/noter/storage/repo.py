@@ -342,9 +342,11 @@ class Repository:
             )
         return self.get_job(r["id"])
 
-    def finish_job(self, job_id: int, ok: bool, error: str | None = None) -> Job:
+    def finish_job(self, job_id: int, ok: bool, error: str | None = None) -> Job | None:
+        """Clôt un job. Retourne None s'il n'existe plus (enregistrement supprimé entre-temps)."""
         job = self.get_job(job_id)
-        assert job is not None
+        if job is None:
+            return None
         if ok:
             status = JobStatus.DONE
         elif job.attempts < job.max_attempts:

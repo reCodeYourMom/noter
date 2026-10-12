@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 import soundfile as sf
@@ -80,14 +81,40 @@ def test_macapp_bundle(tmp_path, monkeypatch):
     assert plist["CFBundleName"] == "Noter" and plist["CFBundleIconFile"] == "AppIcon"
     assert (app / "Contents" / "Resources" / "AppIcon.icns").exists()
     launcher = app / "Contents" / "MacOS" / "noter"
-    text = launcher.read_text()
-    assert launcher.exists() and "noter.ui.main" in text
+    source = (app / "Contents" / "Resources" / "launcher.c").read_text()
+    assert launcher.exists() and '"noter.ui.main"' in source
     # Le lanceur doit viser le Python du venv tel quel, pas sa cible résolue (sinon « No module named noter »)
     import os
     import sys
 
-    assert f'"{os.path.abspath(sys.executable)}" -m noter.ui.main' in text
+    assert f'"{os.path.abspath(sys.executable)}"' in source
     assert macapp.is_installed() and macapp.uninstall() and not app.exists()
+
+
+def test_macapp_native_launcher_spawns_python(tmp_path, monkeypatch):
+    """Le lanceur est un binaire natif (pas un script) qui reste parent de Python et écrit dans le log.
+
+    C'est ce qui permet à macOS d'attribuer l'autorisation micro à Noter.app.
+    """
+    import os
+    import shutil
+    import subprocess
+
+    import pytest
+
+    from noter import macapp
+
+    if not (shutil.which("cc") or shutil.which("clang")):
+        pytest.skip("pas de compilateur C")
+    monkeypatch.setattr(macapp, "app_path", lambda: tmp_path / "Noter.app")
+    # /bin/echo remplace Python : on vérifie la ligne de commande transmise sans lancer l'UI
+    app = macapp.install(python=Path("/bin/echo"))
+    exe = app / "Contents" / "MacOS" / "noter"
+    assert exe.read_bytes()[:2] != b"#!" and macapp.is_native()
+    home = tmp_path / "home"
+    r = subprocess.run([str(exe), "--flag"], env={**os.environ, "NOTER_HOME": str(home)}, timeout=20)
+    assert r.returncode == 0
+    assert "-m noter.ui.main --flag" in (home / "noter.log").read_text()
 
 
 def test_decode_to_16k_soundfile_and_av(tmp_path):
@@ -120,3 +147,35 @@ def test_faster_whisper_engine_gets_decoded_array(tmp_path, monkeypatch):
     res = eng.transcribe(make_wav(tmp_path / "c.wav", seconds=1.0, rate=48000))
     assert isinstance(seen["audio"], np.ndarray) and seen["audio"].dtype == np.float32
     assert res.language == "fr" and res.segments[0].text == "Bonjour"
+
+
+def test_whisper_language_normalized(tmp_path):
+    from noter.config import Settings
+
+    for raw, expected in (("", None), ("  ", None), ("auto", None), (" FR ", "fr"), ("en", "en")):
+        assert Settings(whisper_language=raw).whisper_language == expected
+    env = tmp_path / ".env"
+    env.write_text("NOTER_WHISPER_LANGUAGE=\n")
+    assert Settings(_env_file=str(env)).whisper_language is None
+
+
+def test_mlx_engine_omits_empty_language(tmp_path, monkeypatch):
+    """Langue vide → mlx-whisper ne reçoit pas de paramètre language (sinon « Unsupported language: »)."""
+    import sys
+    import types
+
+    calls = {}
+    fake = types.ModuleType("mlx_whisper")
+
+    def transcribe(path, path_or_hf_repo=None, **kw):
+        calls.update(kw)
+        return {"language": "fr", "segments": [{"start": 0.0, "end": 1.0, "text": " Salut "}]}
+
+    fake.transcribe = transcribe
+    monkeypatch.setitem(sys.modules, "mlx_whisper", fake)
+    from noter.transcription.mlx_whisper import MlxWhisperEngine
+
+    res = MlxWhisperEngine("large-v3-turbo").transcribe(make_wav(tmp_path / "m.wav"), language="")
+    assert "language" not in calls and res.segments[0].text == "Salut"
+    MlxWhisperEngine("large-v3-turbo").transcribe(make_wav(tmp_path / "m.wav"), language="fr")
+    assert calls["language"] == "fr"
