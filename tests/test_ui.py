@@ -159,6 +159,8 @@ def test_env_roundtrip(tmp_path):
     assert env["ANTHROPIC_API_KEY"] == "sk-new" and env["NOTER_WHISPER_MODEL"] == "small"
     assert env["NOTER_CLAUDE_EFFORT"] == "high" and env["AUTRE"] == "1"
     assert p.read_text().startswith("# commentaire\n")
+    write_env(p, {"NOTER_WHISPER_LANGUAGE": ""})
+    assert "NOTER_WHISPER_LANGUAGE" not in read_env(p) and "# NOTER_WHISPER_LANGUAGE=" in p.read_text()
 
 
 def test_single_instance_lock(qapp):

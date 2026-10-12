@@ -120,3 +120,35 @@ def test_faster_whisper_engine_gets_decoded_array(tmp_path, monkeypatch):
     res = eng.transcribe(make_wav(tmp_path / "c.wav", seconds=1.0, rate=48000))
     assert isinstance(seen["audio"], np.ndarray) and seen["audio"].dtype == np.float32
     assert res.language == "fr" and res.segments[0].text == "Bonjour"
+
+
+def test_whisper_language_normalized(tmp_path):
+    from noter.config import Settings
+
+    for raw, expected in (("", None), ("  ", None), ("auto", None), (" FR ", "fr"), ("en", "en")):
+        assert Settings(whisper_language=raw).whisper_language == expected
+    env = tmp_path / ".env"
+    env.write_text("NOTER_WHISPER_LANGUAGE=\n")
+    assert Settings(_env_file=str(env)).whisper_language is None
+
+
+def test_mlx_engine_omits_empty_language(tmp_path, monkeypatch):
+    """Langue vide → mlx-whisper ne reçoit pas de paramètre language (sinon « Unsupported language: »)."""
+    import sys
+    import types
+
+    calls = {}
+    fake = types.ModuleType("mlx_whisper")
+
+    def transcribe(path, path_or_hf_repo=None, **kw):
+        calls.update(kw)
+        return {"language": "fr", "segments": [{"start": 0.0, "end": 1.0, "text": " Salut "}]}
+
+    fake.transcribe = transcribe
+    monkeypatch.setitem(sys.modules, "mlx_whisper", fake)
+    from noter.transcription.mlx_whisper import MlxWhisperEngine
+
+    res = MlxWhisperEngine("large-v3-turbo").transcribe(make_wav(tmp_path / "m.wav"), language="")
+    assert "language" not in calls and res.segments[0].text == "Salut"
+    MlxWhisperEngine("large-v3-turbo").transcribe(make_wav(tmp_path / "m.wav"), language="fr")
+    assert calls["language"] == "fr"

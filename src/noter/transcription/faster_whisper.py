@@ -34,7 +34,7 @@ class FasterWhisperEngine:
         segments_gen, info = model.transcribe(
             audio,
             beam_size=5,
-            language=language,
+            language=language or None,
             vad_filter=True,
             vad_parameters={"min_silence_duration_ms": 500, "speech_pad_ms": 200},
         )

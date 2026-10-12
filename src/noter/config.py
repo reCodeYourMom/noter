@@ -47,6 +47,15 @@ class Settings(BaseSettings):
     # Jobs
     job_max_attempts: int = 3
 
+    @field_validator("whisper_language", mode="before")
+    @classmethod
+    def _language(cls, v):
+        """'' / 'auto' → None (auto-détection) ; ' FR ' → 'fr'."""
+        if v is None:
+            return None
+        v = str(v).strip().lower()
+        return None if v in ("", "auto", "none") else v
+
     @field_validator("data_dir", "db_path", "log_path", mode="before")
     @classmethod
     def _expand(cls, v):
