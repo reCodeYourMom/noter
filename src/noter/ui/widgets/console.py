@@ -82,6 +82,18 @@ class RecordingConsole(QWidget):
         self.source.setObjectName("meta")
         self.source.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         root.addWidget(self.source)
+
+        self.silence = QLabel(
+            "Aucun son capté par le micro. macOS bloque sans doute l’accès : "
+            "Réglages Système → Confidentialité et sécurité → Micro → autorise Noter, puis relance l’app."
+        )
+        self.silence.setObjectName("error")
+        self.silence.setWordWrap(True)
+        self.silence.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self.silence.setFixedWidth(440)
+        self.silence.hide()
+        root.addSpacing(10)
+        root.addWidget(self.silence, 0, Qt.AlignmentFlag.AlignHCenter)
         root.addSpacing(28)
 
         self.stop = QPushButton("  Arrêter")
@@ -131,13 +143,21 @@ class RecordingConsole(QWidget):
         self.sys.setVisible(with_system)
         self.mic.set_level(0)
         self.sys.set_level(0)
+        self._mic_peak = 0.0
+        self.silence.hide()
         self._blink.start()
 
     def end(self) -> None:
         self._blink.stop()
         self._set_lamp(True)
 
+    SILENCE_AFTER_S = 3.0
+
     def tick(self, elapsed: float, levels: dict) -> None:
         self.tc.setText(_timecode(elapsed))
-        self.mic.set_level(levels.get("MIC", 0.0))
+        mic = levels.get("MIC", 0.0)
+        self.mic.set_level(mic)
         self.sys.set_level(levels.get("SYS", 0.0))
+        # Un vrai micro a toujours un bruit de fond : un zéro parfait signifie accès refusé
+        self._mic_peak = max(getattr(self, "_mic_peak", 0.0), mic)
+        self.silence.setVisible(elapsed >= self.SILENCE_AFTER_S and self._mic_peak == 0.0)

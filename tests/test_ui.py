@@ -175,3 +175,25 @@ def test_single_instance_lock(qapp):
     assert second.notify_existing("show")
     _process(qapp, 200)
     assert received == ["show"]
+
+
+def test_console_warns_on_digital_silence(qapp):
+    from datetime import datetime
+    from pathlib import Path
+
+    from noter.models import Recording, Source
+    from noter.ui.widgets.console import RecordingConsole
+
+    c = RecordingConsole()
+    rec = Recording(id="x", source=Source.MAC_MIC, status=RecordingStatus.RECORDING,
+                    started_at=datetime.now(), audio_path=Path("/x"), dir_path=Path("/x"))
+    c.begin(rec, "Micro seul", with_system=False)
+    c.tick(1.0, {"MIC": 0.0})
+    assert c.silence.isHidden()  # trop tôt pour conclure
+    c.tick(3.5, {"MIC": 0.0})
+    assert not c.silence.isHidden()  # silence absolu → avertissement
+    c.tick(4.0, {"MIC": 0.002})
+    assert c.silence.isHidden()  # du son arrive → l'avertissement disparaît
+    c.begin(rec, "Micro seul", with_system=False)
+    c.tick(3.5, {"MIC": 0.0})
+    assert not c.silence.isHidden()
