@@ -27,9 +27,12 @@ class FasterWhisperEngine:
         return self._model
 
     def transcribe(self, audio_path: Path, language: str | None = None) -> TranscriptionResult:
+        from noter.audio.decode import load_audio_16k
+
         model = self._load()
+        audio = load_audio_16k(Path(audio_path))
         segments_gen, info = model.transcribe(
-            str(audio_path),
+            audio,
             beam_size=5,
             language=language,
             vad_filter=True,
