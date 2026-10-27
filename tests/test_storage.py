@@ -135,3 +135,146 @@ def test_legacy_v01_database_is_migrated(home):
     # les tables legacy ont disparu
     names = {r[0] for r in repo.db.connect().execute("SELECT name FROM sqlite_master")}
     assert not any(n.startswith("legacy_") for n in names) and "transcripts_fts" not in names
+
+
+# ─── Boards ─────────────────────────────────────────────────────────
+
+
+def _board(repo, lists=("À faire", "En cours", "Terminé")):
+    board = repo.create_board("Projet", lists=list(lists))
+    return board, repo.get_lists(board.id)
+
+
+def _titles(repo, list_id) -> list[str]:
+    return [c.title for c in repo.cards_in_list(list_id)]
+
+
+def test_v1_database_is_upgraded_to_boards(home):
+    from noter.storage import migrations
+
+    conn = sqlite3.connect(str(home / "old.db"), isolation_level=None)
+    conn.row_factory = sqlite3.Row
+    migrations.run_script(conn, migrations.SCHEMA_V1)
+    conn.execute("INSERT INTO schema_version(version) VALUES (1)")
+    conn.execute("INSERT INTO recordings(id, source, started_at, audio_path, dir_path) VALUES ('r1','import','2026-01-01T10:00:00','/a','/d')")
+    conn.close()
+
+    db = Database(home / "old.db")
+    assert current_version(db.connect()) == CURRENT_VERSION >= 2
+    repo = Repository(db)
+    assert repo.get_recording("r1") is not None  # les données existantes sont intactes
+    board, lists = _board(repo)
+    assert len(lists) == 3 and repo.list_boards() == [board]
+
+
+def test_board_and_list_crud(home):
+    repo = Repository(Database(home / "noter.db"))
+    board, lists = _board(repo)
+    assert [lst.name for lst in lists] == ["À faire", "En cours", "Terminé"]
+    assert [lst.position for lst in lists] == [0, 1, 2]
+
+    extra = repo.create_list(board.id, "Backlog")
+    assert extra.position == 3
+    repo.rename_list(extra.id, "Idées")
+    repo.rename_board(board.id, "  Sprint 12 ")
+    assert repo.get_list(extra.id).name == "Idées" and repo.get_board(board.id).name == "Sprint 12"
+
+    repo.move_list(extra.id, 0)
+    assert [lst.name for lst in repo.get_lists(board.id)] == ["Idées", "À faire", "En cours", "Terminé"]
+    repo.move_list(extra.id, 99)  # borné
+    assert [lst.name for lst in repo.get_lists(board.id)][-1] == "Idées"
+
+    repo.delete_list(lists[0].id)
+    assert [lst.position for lst in repo.get_lists(board.id)] == [0, 1, 2]  # renumérotées sans trou
+
+    for bad in ("", "   "):
+        for call in (lambda b=bad: repo.create_board(b), lambda b=bad: repo.create_list(board.id, b), lambda b=bad: repo.rename_list(extra.id, b)):
+            try:
+                call()
+            except ValueError:
+                continue
+            raise AssertionError("un nom vide doit être refusé")
+
+
+def test_card_ordering_and_moves(home):
+    repo = Repository(Database(home / "noter.db"))
+    board, (todo, doing, done) = _board(repo)
+    a, b, c = (repo.create_card(todo.id, t) for t in "abc")
+    top = repo.create_card(todo.id, "top", at_top=True)
+    assert _titles(repo, todo.id) == ["top", "a", "b", "c"]
+
+    repo.move_card(c.id, todo.id, 0)  # même liste, vers le haut
+    assert _titles(repo, todo.id) == ["c", "top", "a", "b"]
+    repo.move_card(c.id, todo.id, 3)  # même liste, vers le bas
+    assert _titles(repo, todo.id) == ["top", "a", "b", "c"]
+
+    repo.move_card(a.id, doing.id, 0)  # autre liste, liste vide
+    repo.move_card(b.id, doing.id, 1)
+    repo.move_card(top.id, doing.id, 1)  # au milieu
+    assert _titles(repo, doing.id) == ["a", "top", "b"]
+    assert _titles(repo, todo.id) == ["c"]
+    assert [x.position for x in repo.cards_in_list(doing.id)] == [0, 1, 2]
+    assert [x.position for x in repo.cards_in_list(todo.id)] == [0]  # liste d'origine renumérotée
+
+    repo.move_card(c.id, done.id, 50)  # index hors bornes → en fin
+    assert _titles(repo, done.id) == ["c"]
+    repo.move_card(c.id, 9999, 0)  # liste inexistante : rien ne bouge
+    assert repo.get_card(c.id).list_id == done.id
+
+    grouped = repo.cards_for_board(board.id)
+    assert {k: [x.title for x in v] for k, v in grouped.items()} == {todo.id: [], doing.id: ["a", "top", "b"], done.id: ["c"]}
+    assert repo.card_counts() == {board.id: 4}
+
+
+def test_card_fields_roundtrip_and_validation(home):
+    from datetime import date
+
+    from noter.models import ChecklistItem
+
+    repo = Repository(Database(home / "noter.db"))
+    board, (todo, *_rest) = _board(repo)
+    card = repo.create_card(
+        todo.id, "  Envoyer le devis ", description="À faire avant lundi", due=date(2026, 3, 9),
+        labels=["red", "green", "inconnue"], checklist=[ChecklistItem("Relire"), ChecklistItem("Envoyer", True)],
+    )
+    assert card.title == "Envoyer le devis"
+    assert card.due == date(2026, 3, 9) and card.labels == ["green", "red"]  # ordre stable, clés inconnues ignorées
+    assert card.checklist_progress == (1, 2)
+    assert card.is_overdue(date(2026, 3, 10)) and not card.is_overdue(date(2026, 3, 9))
+
+    repo.update_card(card.id, done=True, due=None, labels=[], checklist=[])
+    got = repo.get_card(card.id)
+    assert got.done and got.due is None and got.labels == [] and got.checklist == []
+    assert not got.is_overdue(date(2030, 1, 1))  # sans échéance, jamais en retard
+
+    for call in (
+        lambda: repo.create_card(todo.id, "  "),
+        lambda: repo.update_card(card.id, title=""),
+        lambda: repo.update_card(card.id, position=3),
+        lambda: repo.create_card(todo.id, "x", nope=1),
+    ):
+        try:
+            call()
+        except ValueError:
+            continue
+        raise AssertionError("valeur invalide acceptée")
+
+
+def test_board_deletions_cascade_but_keep_recordings(home):
+    repo = Repository(Database(home / "noter.db"))
+    rec = repo.create_recording(_rec(home))
+    board, (todo, doing, _done) = _board(repo)
+    linked = repo.create_card(todo.id, "Lié", recording_id=rec.id)
+    other = repo.create_card(doing.id, "Autre")
+    assert [c.id for c in repo.cards_for_recording(rec.id)] == [linked.id]
+    assert repo.board_of_card(linked.id).id == board.id
+
+    repo.delete_recording(rec.id)  # la carte survit, sans lien
+    assert repo.get_card(linked.id).recording_id is None
+
+    repo.delete_list(todo.id)  # supprime ses cartes
+    assert repo.get_card(linked.id) is None and repo.get_card(other.id) is not None
+    repo.delete_card(other.id)
+    assert repo.cards_in_list(doing.id) == []
+    repo.delete_board(board.id)
+    assert repo.list_boards() == [] and repo.get_lists(board.id) == []

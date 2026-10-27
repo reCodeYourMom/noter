@@ -146,3 +146,44 @@ def test_recording_deleted_during_processing(service, wav, settings, summarizer)
     assert service.repo.get_recording(rec.id) is None
     assert service.repo.list_jobs(recording_id=rec.id) == []
     assert service.jobs.current is None
+
+
+def test_card_from_action_creates_once_in_first_list(service, wav):
+    rec = service.import_file(wav, title="Call ACME")
+    service.jobs.run_pending()
+
+    card = service.card_from_action(rec.id, 0)
+    board = service.repo.list_boards()[0]
+    first = service.repo.get_lists(board.id)[0]
+    assert board.name == "Mes tâches" and first.name == "À faire"
+    assert [lst.name for lst in service.repo.get_lists(board.id)] == ["À faire", "En cours", "Terminé"]
+    assert card.list_id == first.id and card.recording_id == rec.id
+    assert card.title == "Envoyer le devis"
+    assert "Responsable : Nassim" in card.description and "Call ACME" in card.description
+    assert "Échéance annoncée : vendredi" in card.description and card.due is None  # texte libre, pas une date
+
+    again = service.card_from_action(rec.id, 0)  # idempotent
+    assert again.id == card.id and len(service.repo.cards_in_list(first.id)) == 1
+
+    other = service.create_board("Perso")
+    assert service.default_board().id == board.id  # le premier board reste la cible par défaut
+    try:
+        service.card_from_action(rec.id, 7, other.id)
+    except IndexError:
+        pass
+    else:
+        raise AssertionError("une action inexistante doit lever IndexError")
+
+
+def test_card_from_action_parses_iso_due_date(service, wav):
+    from datetime import date
+
+    from noter.models import ActionItem
+
+    rec = service.import_file(wav)
+    service.jobs.run_pending()
+    summary = service.repo.get_summary(rec.id)
+    summary.actions = [ActionItem("Livrer", owner=None, due="2026-04-02")]
+    service.repo.upsert_summary(summary)
+    card = service.card_from_action(rec.id, 0)
+    assert card.due == date(2026, 4, 2) and "Échéance annoncée" not in card.description

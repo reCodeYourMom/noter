@@ -117,8 +117,8 @@ class RecordingListModel(QAbstractListModel):
 
 
 class RecordingDelegate(QStyledItemDelegate):
-    ROW_H = 56
-    HEADER_H = 30
+    ROW_H = 60
+    HEADER_H = 32
     PAD = 14
 
     def __init__(self, view: QListView):
@@ -156,25 +156,28 @@ class RecordingDelegate(QStyledItemDelegate):
         if header is not None:
             f = QFont(option.font)
             f.setPixelSize(11)
-            f.setWeight(QFont.Weight.Medium)
+            f.setWeight(QFont.Weight.DemiBold)
             f.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1)
             p.setFont(f)
             p.setPen(qcolor(t.ink_3))
-            p.drawText(QRect(r.left() + self.PAD + 2, r.top(), r.width(), r.height()), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, header.upper())
+            p.drawText(QRect(r.left() + self.PAD + 2, r.top() + 4, r.width(), r.height() - 4), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, header.upper())
             p.restore()
             return
 
         rec: Recording = index.data(RecordingRole)
-        inner = r.adjusted(6, 1, -6, -1)
+        inner = r.adjusted(8, 2, -8, -2)
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
         hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
         if selected or hovered:
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(qcolor(t.sel))
-            p.drawRoundedRect(inner, 8, 8)
+            p.setBrush(qcolor(t.accent_soft if selected else t.sel))
+            p.drawRoundedRect(inner, 10, 10)
+        if selected:  # liseré iris, comme un marque-page
+            p.setBrush(qcolor(t.accent))
+            p.drawRoundedRect(QRect(inner.left(), inner.top() + 12, 3, inner.height() - 24), 1.5, 1.5)
 
-        x = inner.left() + 10
-        paint_status_glyph(p, x + 5, inner.top() + 20, rec.status, t, self.phase)
+        x = inner.left() + 12
+        paint_status_glyph(p, x + 5, inner.top() + 21, rec.status, t, self.phase)
         x += 20
         right = inner.right() - 12
 
@@ -185,27 +188,27 @@ class RecordingDelegate(QStyledItemDelegate):
         dur_w = fm_mono.horizontalAdvance(dur) + 6 if dur else 0
 
         title_font = QFont(option.font)
-        title_font.setWeight(QFont.Weight.Medium)
+        title_font.setWeight(QFont.Weight.DemiBold if selected else QFont.Weight.Medium)
         p.setFont(title_font)
-        p.setPen(qcolor(t.ink))
+        p.setPen(qcolor(t.accent_ink if selected else t.ink))
         fm = QFontMetrics(title_font)
         title_w = right - x - dur_w
-        p.drawText(QRect(x, inner.top() + 9, title_w, 18), Qt.AlignmentFlag.AlignVCenter, fm.elidedText(rec.display_title, Qt.TextElideMode.ElideRight, title_w))
+        p.drawText(QRect(x, inner.top() + 11, title_w, 18), Qt.AlignmentFlag.AlignVCenter, fm.elidedText(rec.display_title, Qt.TextElideMode.ElideRight, title_w))
         if dur:
             p.setFont(mono)
             p.setPen(qcolor(t.ink_3))
-            p.drawText(QRect(right - dur_w, inner.top() + 9, dur_w, 18), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, dur)
+            p.drawText(QRect(right - dur_w, inner.top() + 11, dur_w, 18), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, dur)
 
         # Sous-ligne : heure (ou date), état si pas prêt, projet en capsule, tags
         sub_font = QFont(option.font)
         sub_font.setPixelSize(12)
         p.setFont(sub_font)
         fm2 = QFontMetrics(sub_font)
-        y = inner.top() + 30
+        y = inner.top() + 33
         cx = x
         if rec.status != RecordingStatus.DONE:
             txt = STATUS_TEXT.get(rec.status, "")
-            p.setPen(qcolor(t.rec if rec.status in (RecordingStatus.FAILED, RecordingStatus.RECORDING) else t.busy))
+            p.setPen(qcolor(t.rec_ink if rec.status in (RecordingStatus.FAILED, RecordingStatus.RECORDING) else t.accent_ink))
             p.drawText(QRect(cx, y, right - cx, 16), Qt.AlignmentFlag.AlignVCenter, txt)
             cx += fm2.horizontalAdvance(txt) + 8
         else:
@@ -218,14 +221,18 @@ class RecordingDelegate(QStyledItemDelegate):
             chip_font = QFont(option.font)
             chip_font.setPixelSize(11)
             fmc = QFontMetrics(chip_font)
-            w = fmc.horizontalAdvance(rec.project) + 16
+            # Capsule teintée de la couleur du projet (la même que dans le rail)
+            color = theme.speaker_color(t, rec.project)
+            w = fmc.horizontalAdvance(rec.project) + 26
             w = min(w, right - cx)
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(qcolor(t.inset))
-            p.drawRoundedRect(QRect(cx, y + 1, w, 15), 4, 4)
+            p.setBrush(theme.soft(color, 0.16))
+            p.drawRoundedRect(QRect(cx, y, w, 17), 8.5, 8.5)
+            p.setBrush(color)
+            p.drawEllipse(QRect(cx + 7, y + 5, 7, 7))
             p.setFont(chip_font)
             p.setPen(qcolor(t.ink_2))
-            p.drawText(QRect(cx + 6, y + 1, w - 12, 15), Qt.AlignmentFlag.AlignVCenter, fmc.elidedText(rec.project, Qt.TextElideMode.ElideRight, w - 12))
+            p.drawText(QRect(cx + 18, y, w - 24, 17), Qt.AlignmentFlag.AlignVCenter, fmc.elidedText(rec.project, Qt.TextElideMode.ElideRight, w - 24))
             cx += w + 8
             p.setFont(sub_font)
         if rec.tags and cx < right - 20:

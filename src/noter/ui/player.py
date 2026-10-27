@@ -33,7 +33,7 @@ class AudioPlayer(QWidget):
 
         self.btn = QPushButton()
         self.btn.setObjectName("play")
-        self.btn.setFixedSize(28, 28)
+        self.btn.setFixedSize(30, 30)
         self.btn.clicked.connect(self.toggle)
         self._set_icon(False)
         self.slider = QSlider(Qt.Orientation.Horizontal)
@@ -113,7 +113,6 @@ class AudioPlayer(QWidget):
         self._set_icon(playing)
 
     def _set_icon(self, playing: bool) -> None:
-        from noter.ui import icons, theme
+        from noter.ui import icons
 
-        t = theme.current()
-        self.btn.setIcon(icons.icon("pause" if playing else "play", t.panel, 11))
+        self.btn.setIcon(icons.icon("pause" if playing else "play", "#FFFFFF", 11))

@@ -6,7 +6,6 @@ from PySide6.QtGui import QPainter, QPaintEvent
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from noter.ui import icons, theme
-from noter.ui.theme import qcolor
 
 
 class WaveGlyph(QWidget):
@@ -15,7 +14,7 @@ class WaveGlyph(QWidget):
     def __init__(self, bars: int = 46, parent=None):
         super().__init__(parent)
         self.bars = bars
-        self.setFixedSize(280, 56)
+        self.setFixedSize(300, 64)
         seed = 7
         vals = []
         env = 0.3
@@ -31,13 +30,13 @@ class WaveGlyph(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(qcolor(t.ink_4))
         w, h = self.width(), self.height()
         gap = 3
         bw = (w - gap * (self.bars - 1)) / self.bars
         for i, v in enumerate(self.vals):
             bh = max(3.0, v * h * 0.9)
-            p.drawRoundedRect(QRectF(i * (bw + gap), (h - bh) / 2, bw, bh), 1.5, 1.5)
+            p.setBrush(theme.gradient_color(t, i / max(1, self.bars - 1)))  # dégradé aurora
+            p.drawRoundedRect(QRectF(i * (bw + gap), (h - bh) / 2, bw, bh), bw / 2, bw / 2)
         p.end()
 
 
@@ -63,16 +62,15 @@ class EmptyState(QWidget):
         self.text.setObjectName("empty")
         self.text.setWordWrap(True)
         self.text.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        self.text.setFixedWidth(360)
+        self.text.setFixedWidth(380)
         lay.addWidget(self.text, 0, Qt.AlignmentFlag.AlignHCenter)
         if actions:
-            t = theme.current()
             row = QHBoxLayout()
             row.setSpacing(8)
             row.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-            rec = QPushButton("  Enregistrer")
-            rec.setObjectName("primary")
-            rec.setIcon(icons.icon("mic", t.panel, 14))
+            rec = QPushButton("  Lancer un enregistrement")
+            rec.setObjectName("cta")
+            rec.setIcon(icons.icon("mic", "#FFFFFF", 14))
             rec.setCursor(Qt.CursorShape.PointingHandCursor)
             rec.clicked.connect(self.record_requested.emit)
             imp = QPushButton("Importer un fichier…")

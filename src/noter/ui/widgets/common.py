@@ -1,8 +1,10 @@
 """Petits composants partagés : pastilles, labels de section, filets, glyphes d'état, avatars."""
 from __future__ import annotations
 
+import html
+
 from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QToolButton
 
 from noter.models import RecordingStatus
@@ -23,10 +25,33 @@ def clear_layout(lay) -> None:
             clear_layout(it.layout())
 
 
-def section_label(text: str) -> QLabel:
-    lab = QLabel(text.upper())
+def section_label(text: str, color: str | None = None) -> QLabel:
+    """Titre de section en petites capitales, éventuellement précédé d'une pastille de couleur."""
+    lab = QLabel()
     lab.setObjectName("section")
+    if color:
+        lab.setText(f'<span style="color:{color}">●</span>&nbsp;&nbsp;{html.escape(text.upper())}')
+    else:
+        lab.setText(text.upper())
     return lab
+
+
+def dot_icon(color: str, diameter: int = 8) -> QIcon:
+    """Petit disque plein (ex. le point blanc du bouton Enregistrer)."""
+    ic = QIcon()
+    for scale in (1, 2):
+        px = (diameter + 2) * scale
+        pm = QPixmap(px, px)
+        pm.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(color))
+        p.drawEllipse(QRectF(scale, scale, diameter * scale, diameter * scale))
+        p.end()
+        pm.setDevicePixelRatio(scale)
+        ic.addPixmap(pm)
+    return ic
 
 
 def hline() -> QFrame:

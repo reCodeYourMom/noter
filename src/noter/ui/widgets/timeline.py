@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QRectF, Qt, Signal
-from PySide6.QtGui import QFont, QMouseEvent, QPainter, QPaintEvent
+from PySide6.QtGui import QBrush, QFont, QLinearGradient, QMouseEvent, QPainter, QPaintEvent, QPen
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
 from noter.models import Segment, format_timestamp
@@ -66,7 +66,7 @@ class WaveformTimeline(QWidget):
         wave = QRectF(0, 0, w, self.WAVE_H)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(qcolor(t.panel_2))
-        p.drawRoundedRect(wave, 6, 6)
+        p.drawRoundedRect(wave, 10, 10)
 
         frac = (self.position / self.duration) if self.duration > 0 else 0.0
         played_x = frac * w
@@ -81,12 +81,17 @@ class WaveformTimeline(QWidget):
                 bw = max(1.0, (w - gap * n) / n)
             else:
                 peaks = self.peaks
+            # Partie écoutée : dégradé iris → corail ; le reste en gris doux
+            played = QLinearGradient(0, 0, w, 0)
+            played.setColorAt(0.0, qcolor(t.accent))
+            played.setColorAt(1.0, qcolor(t.rec))
+            rest = qcolor(t.ink_4)
             for i, v in enumerate(peaks):
-                h = max(3.0, v * (self.WAVE_H - 12))
+                h = max(3.0, v * (self.WAVE_H - 14))
                 x = i * (bw + gap) + 1
                 y = (self.WAVE_H - h) / 2
-                p.setBrush(qcolor(t.ink) if x <= played_x else qcolor(t.ink_4))
-                p.drawRoundedRect(QRectF(x, y, bw, h), 1.5, 1.5)
+                p.setBrush(QBrush(played) if x <= played_x else rest)
+                p.drawRoundedRect(QRectF(x, y, bw, h), bw / 2, bw / 2)
         else:
             f = QFont()
             f.setPixelSize(11)
@@ -111,8 +116,8 @@ class WaveformTimeline(QWidget):
         for m in self.markers:
             if self.duration > 0:
                 x = m / self.duration * w
-                p.setBrush(qcolor(t.busy))
-                p.drawRoundedRect(QRectF(x - 1.5, self.WAVE_H - 6, 3, 6), 1, 1)
+                p.setBrush(qcolor(t.ok))
+                p.drawEllipse(QRectF(x - 3, self.WAVE_H - 9, 6, 6))
 
         # Règle
         ruler_y = lane_y + self.LANE_H + 4
@@ -138,13 +143,14 @@ class WaveformTimeline(QWidget):
         if self.duration > 0:
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(qcolor(t.rec))
-            p.drawRect(QRectF(played_x - 0.5, 0, 1, lane_y + self.LANE_H))
-            p.drawEllipse(QRectF(played_x - 3.5, -1, 7, 7))
+            p.drawRoundedRect(QRectF(played_x - 1, 0, 2, lane_y + self.LANE_H), 1, 1)
+            p.setPen(QPen(qcolor(t.panel), 2))
+            p.drawEllipse(QRectF(played_x - 5, -2, 10, 10))
         p.end()
 
 
 class LevelMeter(QWidget):
-    """Vumètre à segments : vert, ambre vers la fin, rouge sur les derniers."""
+    """Vumètre à segments, coloré selon le dégradé aurora : menthe, puis iris, corail quand ça sature."""
 
     def __init__(self, segments: int = 28, parent=None):
         super().__init__(parent)
@@ -173,10 +179,8 @@ class LevelMeter(QWidget):
         for i in range(self.segments):
             x = i * (sw + gap)
             if i < on:
-                frac = i / self.segments
-                color = t.rec if frac > 0.88 else (t.busy if frac > 0.72 else t.ok)
+                p.setBrush(theme.gradient_color(t, i / max(1, self.segments - 1)))
             else:
-                color = t.inset
-            p.setBrush(qcolor(color))
+                p.setBrush(qcolor(t.inset))
             p.drawRoundedRect(QRectF(x, 0, sw, h), 2, 2)
         p.end()

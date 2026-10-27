@@ -29,6 +29,17 @@ git clone <ce-repo> noter && cd noter
 
 Le script installe Homebrew, Python 3.11+, ffmpeg, BlackHole, crée le venv, puis `~/Noter/.env` (clé API) et propose le lancement au login. Pour l'audio système, crée ensuite un **périphérique à sorties multiples** dans *Configuration audio et MIDI* (BlackHole 2ch + ton casque) et utilise-le comme sortie pendant les calls.
 
+### Avec des écouteurs
+
+Ta voix passe toujours par le micro par défaut du Mac. Pour enregistrer **aussi la voix des autres**, la sortie audio doit être le **périphérique à sorties multiples** (BlackHole 2ch + tes écouteurs), pas directement « AirPods » ou « Casque ». Sinon le son part dans tes oreilles et BlackHole ne reçoit rien.
+
+La console d'enregistrement affiche le micro et la sortie utilisés, et prévient :
+- tout de suite si la sortie ne ressemble pas à un périphérique à sorties multiples ;
+- au bout de 20 s sans aucun son système ;
+- si BlackHole n'est pas installé.
+
+L'avertissement disparaît dès que le son des autres arrive. Tu peux changer de sortie en plein call. La liste des périphériques est relue à chaque enregistrement : des écouteurs branchés après le lancement de Noter sont pris en compte. Avec des AirPods, préfère le micro du Mac en entrée : le micro Bluetooth fait passer le son en qualité « appel ».
+
 Installation manuelle :
 
 ```bash
@@ -42,13 +53,29 @@ noter doctor
 
 `noter app install` crée `~/Applications/Noter.app` (icône, nom « Noter » dans le Dock et la barre de menu). `install.sh` le fait pour toi. L'app vit ensuite dans la barre de menu : fermer la fenêtre ne la quitte pas.
 
-- **Rail de navigation** : tous, en cours, échecs, puis projets et tags avec compteurs ; état du traitement en bas.
+- **Rail de navigation** : le bouton **Enregistrer** (toujours visible, y compris dans les boards) et l'import, puis la bibliothèque (tous les calls, en cours, échecs), les boards de tâches, les projets et les tags avec compteurs ; état du traitement en bas.
 - **Liste** groupée par jour (aujourd'hui, hier, cette semaine…), un glyphe d'état par ligne (prêt, en cours animé, à traiter, échec), durée, projet et tags.
 - **Fiche d'un enregistrement** : titre, projet, tags et notes modifiables en place. En tête, la **timeline audio** : onde du call, couloir des speakers en couleurs, tête de lecture ; clic pour se déplacer. Dessous, deux colonnes : la synthèse (en bref, points clés, décisions, actions cochables avec responsable et échéance) et le transcript horodaté avec avatars des speakers, synchronisé à la lecture (double-clic pour écouter un passage, clic droit pour renommer un speaker).
 - **Console d'enregistrement** : voyant, compteur, titre, vumètres micro et système, bouton Arrêter.
+- **Tâches** : des boards façon Trello, directement dans l'app (voir ci-dessous).
 - **Recherche** plein texte dans transcripts, résumés et titres ; un résultat ouvre la fiche au bon passage, les occurrences sont marquées sur la timeline.
 - **Import** par bouton ou glisser-déposer. **Réglages** (clé API, modèles, langue) dans `~/Noter/.env`.
-- Thème clair ou sombre selon le système, typographie IBM Plex (sans et mono), une seule couleur d'accent : le rouge du REC.
+- Thème clair ou sombre selon le système, typographie IBM Plex (sans et mono) et **trois couleurs**, chacune avec un rôle :
+  - **iris** (violet) : la marque, les actions, la sélection, les traitements en cours ;
+  - **corail** : le REC, les retards, les erreurs ;
+  - **menthe** : ce qui est prêt ou terminé.
+
+  Ensemble, elles forment le dégradé « aurora » (menthe → iris → corail) de l'icône, du bouton Enregistrer, des ondes et des vumètres. Les tokens sont dans `src/noter/ui/theme.py` ; l'icône se régénère avec `python scripts/make_icon.py`.
+
+### Tâches (boards)
+
+Section **Tâches** du rail : un item par board, `+` pour en créer un (il démarre avec *À faire / En cours / Terminé*).
+
+- **Listes** côte à côte, qui défilent horizontalement. Clic sur le titre pour renommer, glisser le titre pour réordonner, menu `…` pour déplacer ou supprimer la liste. « Ajouter une liste » en bout de rangée.
+- **Cartes** : « Ajouter une carte » en bas de chaque liste (`Entrée` valide et reste ouvert pour enchaîner, `Maj+Entrée` = saut de ligne, `Échap` annule). On les **glisse-dépose** d'une liste à l'autre ou dans la même liste ; un cadre pointillé montre où elle atterrit, et le board défile tout seul quand on longe un bord.
+- **Fiche d'une carte** (clic) : titre, **étiquettes** colorées, **échéance** (en retard = corail, imminente = iris, terminée = menthe) ; chaque liste prend à tour de rôle une des trois couleurs, description, **checklist** avec progression, déplacement vers une autre liste, suppression. Tout s'enregistre au fil de l'eau.
+- **Filtre** en haut du board : titre, description ou nom d'étiquette (`⌘F`).
+- **Lien avec les enregistrements** : dans le compte-rendu, chaque action a un bouton *Ajouter aux tâches* qui crée une carte (responsable et échéance reprises, lien vers l'enregistrement). Le bouton devient une coche qui ouvre la carte, et la carte ouvre l'enregistrement d'origine. Les boards vivent dans `~/Noter/noter.db`.
 
 Raccourcis : `⌘R` enregistrer, `⌘⇧R` micro seul, `⌘.` arrêter, `⌘I` importer, `⌘F` rechercher, `⌘,` réglages, `⌘⌫` supprimer.
 
@@ -110,12 +137,13 @@ src/noter/
 ├── service.py        façade unique (CLI, app) : enregistrer, importer, récupérer
 ├── pipeline.py       transcribe → summarize → fichiers de sortie
 ├── jobs.py           file de jobs + worker
-├── storage/          SQLite (db, migrations, repo) et arborescence disque (files)
+├── storage/          SQLite (db, migrations, repo : enregistrements, boards, cartes, jobs) et arborescence disque (files)
 ├── audio/            devices, recorder (streaming), mixer
 ├── transcription/    moteurs Whisper + diarisation
 ├── analyzer/         prompts + Claude (sortie structurée)
 ├── export/           PDF
-├── ui/               app desktop PySide6 : theme (tokens), icons, widgets/ (rail, liste, timeline, console…)
+├── ui/               app desktop PySide6 : theme (tokens), icons, widgets/ (rail, liste, timeline, console, board…),
+│                     board_view (tâches), card_dialog (fiche d'une carte)
 ├── macapp.py         bundle Noter.app
 ├── cli.py            ligne de commande
 └── launchd.py        LaunchAgent macOS

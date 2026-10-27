@@ -15,7 +15,15 @@ from pathlib import Path
 
 import numpy as np
 
-from noter.audio.devices import AudioDevice, default_mic, find_blackhole, supported_samplerate
+from noter.audio.devices import (
+    AudioDevice,
+    AudioRoute,
+    default_mic,
+    default_output_name,
+    find_blackhole,
+    refresh,
+    supported_samplerate,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +54,7 @@ class Recorder:
         self._threads: list[threading.Thread] = []
         self._started_at: float | None = None
         self.system_audio_captured = False
+        self.route: AudioRoute | None = None
 
     # ─── Infos ──────────────────────────────────────────────────────
 
@@ -72,6 +81,7 @@ class Recorder:
     # ─── Cycle de vie ───────────────────────────────────────────────
 
     def start(self) -> None:
+        refresh()  # écouteurs branchés / débranchés depuis le dernier enregistrement
         mic = default_mic()
         if mic is None:
             raise RuntimeError("Aucun micro détecté (vérifie les permissions Micro dans Réglages Système)")
@@ -87,13 +97,22 @@ class Recorder:
                 self._streams.append(_Stream("SYS", bh, supported_samplerate(bh, self.sample_rate), self.target_dir / SYS_TMP))
                 self.system_audio_captured = True
 
+        self.route = AudioRoute(
+            mic=mic.name,
+            output=default_output_name(),
+            system=next((s.device.name for s in self._streams if s.label == "SYS"), None),
+            wanted_system=self.with_system_audio,
+        )
+        if self.route.output_suspect:
+            logger.warning("Sortie « %s » : le son des autres n'arrivera sans doute pas à BlackHole", self.route.output)
+
         self._stop.clear()
         self._started_at = time.monotonic()
         for s in self._streams:
             t = threading.Thread(target=self._run_stream, args=(s,), name=f"rec-{s.label}", daemon=True)
             self._threads.append(t)
             t.start()
-        logger.info("Enregistrement démarré (%s)", ", ".join(f"{s.label}@{s.samplerate}" for s in self._streams))
+        logger.info("Enregistrement démarré (%s) — %s", ", ".join(f"{s.label}@{s.samplerate}" for s in self._streams), self.route.describe())
 
     def stop(self) -> float:
         """Arrête les flux, ferme les fichiers. Retourne la durée (s)."""

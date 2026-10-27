@@ -12,9 +12,12 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QLabel,
     QLineEdit,
+    QSpacerItem,
 )
 
 from noter.config import Settings, noter_home
+from noter.ui import theme
+from noter.ui.widgets.common import section_label
 
 WHISPER_MODELS = ["tiny", "base", "small", "medium", "large-v3-turbo", "large-v3"]
 EFFORTS = ["low", "medium", "high"]
@@ -79,18 +82,37 @@ class SettingsDialog(QDialog):
         self.auto = QCheckBox("Résumer automatiquement après transcription")
         self.auto.setChecked(env.get("NOTER_AUTO_SUMMARIZE", str(settings.auto_summarize)).lower() in ("1", "true", "yes"))
 
+        t = theme.current()
         form = QFormLayout(self)
+        form.setContentsMargins(28, 24, 28, 22)
+        form.setHorizontalSpacing(16)
+        form.setVerticalSpacing(10)
+        title = QLabel("Réglages")
+        title.setObjectName("pageTitle")
+        sub = QLabel("Résumés avec Claude, transcription en local avec Whisper.")
+        sub.setObjectName("meta")
+        form.addRow(title)
+        form.addRow(sub)
+        form.addItem(QSpacerItem(0, 8))
+        form.addRow(section_label("Résumé · Claude", t.accent))
         form.addRow("Clé API Anthropic", self.api_key)
         form.addRow("Modèle Claude", self.model)
         form.addRow("Effort", self.effort)
+        form.addRow("", self.auto)
+        form.addItem(QSpacerItem(0, 6))
+        form.addRow(section_label("Transcription · Whisper", t.ok))
         form.addRow("Modèle Whisper", self.whisper)
         form.addRow("Langue forcée", self.language)
-        form.addRow("", self.auto)
+        form.addItem(QSpacerItem(0, 6))
         note = QLabel(f"Fichier : {env_path()}\nLes changements s'appliquent au redémarrage de Noter.")
-        note.setObjectName("meta")
+        note.setObjectName("gen")
         note.setWordWrap(True)
         form.addRow(note)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        save = buttons.button(QDialogButtonBox.StandardButton.Save)
+        save.setText("Enregistrer")
+        save.setObjectName("primary")
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Annuler")
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         form.addRow(buttons)
