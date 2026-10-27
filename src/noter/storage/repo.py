@@ -4,11 +4,16 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from noter.models import (
+    LABEL_KEYS,
     ActionItem,
+    Board,
+    BoardList,
+    Card,
+    ChecklistItem,
     Job,
     JobKind,
     JobStatus,
@@ -302,6 +307,187 @@ class Repository:
             hits.append(SearchHit(recording=rec(r["id"]), kind="title", snippet=r["title"]))
         return hits
 
+    # ─── Boards (gestion de tâches) ─────────────────────────────────
+
+    def create_board(self, name: str, lists: list[str] | None = None) -> Board:
+        name = name.strip()
+        if not name:
+            raise ValueError("Le nom du board est vide")
+        with self.db.tx() as conn:
+            pos = conn.execute("SELECT COALESCE(MAX(position) + 1, 0) FROM boards").fetchone()[0]
+            board_id = conn.execute("INSERT INTO boards(name, position) VALUES (?, ?)", (name, pos)).lastrowid
+            for i, list_name in enumerate(lists or []):
+                conn.execute("INSERT INTO board_lists(board_id, name, position) VALUES (?,?,?)", (board_id, list_name, i))
+        return self.get_board(board_id)  # type: ignore[return-value]
+
+    def get_board(self, board_id: int) -> Board | None:
+        r = self.db.connect().execute("SELECT * FROM boards WHERE id = ?", (board_id,)).fetchone()
+        return _row_to_board(r) if r else None
+
+    def list_boards(self) -> list[Board]:
+        return [_row_to_board(r) for r in self.db.connect().execute("SELECT * FROM boards ORDER BY position, id")]
+
+    def rename_board(self, board_id: int, name: str) -> None:
+        name = name.strip()
+        if not name:
+            raise ValueError("Le nom du board est vide")
+        with self.db.tx() as conn:
+            conn.execute("UPDATE boards SET name = ? WHERE id = ?", (name, board_id))
+
+    def delete_board(self, board_id: int) -> None:
+        with self.db.tx() as conn:
+            conn.execute("DELETE FROM boards WHERE id = ?", (board_id,))
+
+    def get_lists(self, board_id: int) -> list[BoardList]:
+        rows = self.db.connect().execute(
+            "SELECT * FROM board_lists WHERE board_id = ? ORDER BY position, id", (board_id,)
+        ).fetchall()
+        return [_row_to_list(r) for r in rows]
+
+    def get_list(self, list_id: int) -> BoardList | None:
+        r = self.db.connect().execute("SELECT * FROM board_lists WHERE id = ?", (list_id,)).fetchone()
+        return _row_to_list(r) if r else None
+
+    def create_list(self, board_id: int, name: str) -> BoardList:
+        name = name.strip()
+        if not name:
+            raise ValueError("Le nom de la liste est vide")
+        with self.db.tx() as conn:
+            pos = conn.execute(
+                "SELECT COALESCE(MAX(position) + 1, 0) FROM board_lists WHERE board_id = ?", (board_id,)
+            ).fetchone()[0]
+            list_id = conn.execute(
+                "INSERT INTO board_lists(board_id, name, position) VALUES (?,?,?)", (board_id, name, pos)
+            ).lastrowid
+        return self.get_list(list_id)  # type: ignore[return-value]
+
+    def rename_list(self, list_id: int, name: str) -> None:
+        name = name.strip()
+        if not name:
+            raise ValueError("Le nom de la liste est vide")
+        with self.db.tx() as conn:
+            conn.execute("UPDATE board_lists SET name = ? WHERE id = ?", (name, list_id))
+
+    def delete_list(self, list_id: int) -> None:
+        with self.db.tx() as conn:
+            row = conn.execute("SELECT board_id FROM board_lists WHERE id = ?", (list_id,)).fetchone()
+            conn.execute("DELETE FROM board_lists WHERE id = ?", (list_id,))
+            if row:
+                _renumber_lists(conn, row["board_id"])
+
+    def move_list(self, list_id: int, index: int) -> None:
+        """Place la liste à `index` (0 = tout à gauche) dans son board."""
+        with self.db.tx() as conn:
+            row = conn.execute("SELECT board_id FROM board_lists WHERE id = ?", (list_id,)).fetchone()
+            if row is None:
+                return
+            ids = [r[0] for r in conn.execute(
+                "SELECT id FROM board_lists WHERE board_id = ? AND id != ? ORDER BY position, id", (row["board_id"], list_id)
+            )]
+            ids.insert(max(0, min(index, len(ids))), list_id)
+            _renumber_lists(conn, row["board_id"], ids)
+
+    # ─── Cartes ─────────────────────────────────────────────────────
+
+    def create_card(self, list_id: int, title: str, at_top: bool = False, **fields) -> Card:
+        title = title.strip()
+        if not title:
+            raise ValueError("Le titre de la carte est vide")
+        bad = set(fields) - _CARD_FIELDS
+        if bad:
+            raise ValueError(f"Champs de carte inconnus : {bad}")
+        values = _card_values({"title": title, **fields})
+        cols = ", ".join(values)
+        with self.db.tx() as conn:
+            if at_top:
+                conn.execute("UPDATE cards SET position = position + 1 WHERE list_id = ?", (list_id,))
+                pos = 0
+            else:
+                pos = conn.execute(
+                    "SELECT COALESCE(MAX(position) + 1, 0) FROM cards WHERE list_id = ?", (list_id,)
+                ).fetchone()[0]
+            card_id = conn.execute(
+                f"INSERT INTO cards(list_id, position, {cols}) VALUES (?, ?, {', '.join('?' * len(values))})",
+                [list_id, pos, *values.values()],
+            ).lastrowid
+        return self.get_card(card_id)  # type: ignore[return-value]
+
+    def get_card(self, card_id: int) -> Card | None:
+        r = self.db.connect().execute("SELECT * FROM cards WHERE id = ?", (card_id,)).fetchone()
+        return _row_to_card(r) if r else None
+
+    def cards_in_list(self, list_id: int) -> list[Card]:
+        rows = self.db.connect().execute("SELECT * FROM cards WHERE list_id = ? ORDER BY position, id", (list_id,)).fetchall()
+        return [_row_to_card(r) for r in rows]
+
+    def cards_for_board(self, board_id: int) -> dict[int, list[Card]]:
+        """Cartes de chaque liste du board, dans l'ordre d'affichage."""
+        out: dict[int, list[Card]] = {lst.id: [] for lst in self.get_lists(board_id)}
+        rows = self.db.connect().execute(
+            "SELECT c.* FROM cards c JOIN board_lists l ON l.id = c.list_id "
+            "WHERE l.board_id = ? ORDER BY c.position, c.id",
+            (board_id,),
+        ).fetchall()
+        for r in rows:
+            out[r["list_id"]].append(_row_to_card(r))
+        return out
+
+    def cards_for_recording(self, recording_id: str) -> list[Card]:
+        rows = self.db.connect().execute(
+            "SELECT * FROM cards WHERE recording_id = ? ORDER BY id", (recording_id,)
+        ).fetchall()
+        return [_row_to_card(r) for r in rows]
+
+    def board_of_card(self, card_id: int) -> Board | None:
+        r = self.db.connect().execute(
+            "SELECT b.* FROM boards b JOIN board_lists l ON l.board_id = b.id JOIN cards c ON c.list_id = l.id WHERE c.id = ?",
+            (card_id,),
+        ).fetchone()
+        return _row_to_board(r) if r else None
+
+    def update_card(self, card_id: int, **fields) -> None:
+        bad = set(fields) - _CARD_FIELDS
+        if bad:
+            raise ValueError(f"Champs de carte inconnus : {bad}")
+        if "title" in fields and not str(fields["title"]).strip():
+            raise ValueError("Le titre de la carte est vide")
+        if not fields:
+            return
+        values = _card_values(fields)
+        sets = ", ".join(f"{k} = ?" for k in values)
+        with self.db.tx() as conn:
+            conn.execute(f"UPDATE cards SET {sets}, updated_at = ? WHERE id = ?", [*values.values(), _now(), card_id])
+
+    def move_card(self, card_id: int, list_id: int, index: int) -> None:
+        """Déplace la carte dans `list_id` à la position `index` (peut être la même liste)."""
+        with self.db.tx() as conn:
+            row = conn.execute("SELECT list_id FROM cards WHERE id = ?", (card_id,)).fetchone()
+            if row is None or conn.execute("SELECT 1 FROM board_lists WHERE id = ?", (list_id,)).fetchone() is None:
+                return
+            source = row["list_id"]
+            ids = [r[0] for r in conn.execute(
+                "SELECT id FROM cards WHERE list_id = ? AND id != ? ORDER BY position, id", (list_id, card_id)
+            )]
+            ids.insert(max(0, min(index, len(ids))), card_id)
+            conn.execute("UPDATE cards SET list_id = ?, updated_at = ? WHERE id = ?", (list_id, _now(), card_id))
+            _renumber_cards(conn, list_id, ids)
+            if source != list_id:
+                _renumber_cards(conn, source)
+
+    def delete_card(self, card_id: int) -> None:
+        with self.db.tx() as conn:
+            row = conn.execute("SELECT list_id FROM cards WHERE id = ?", (card_id,)).fetchone()
+            conn.execute("DELETE FROM cards WHERE id = ?", (card_id,))
+            if row:
+                _renumber_cards(conn, row["list_id"])
+
+    def card_counts(self) -> dict[int, int]:
+        """Nombre de cartes par board."""
+        rows = self.db.connect().execute(
+            "SELECT l.board_id, COUNT(c.id) FROM board_lists l JOIN cards c ON c.list_id = l.id GROUP BY l.board_id"
+        )
+        return {r[0]: r[1] for r in rows}
+
     # ─── Jobs ───────────────────────────────────────────────────────
 
     def _row_to_job(self, r: sqlite3.Row) -> Job:
@@ -393,6 +579,65 @@ class Repository:
         return int(
             self.db.connect().execute("SELECT COUNT(*) FROM jobs WHERE status IN ('queued','running')").fetchone()[0]
         )
+
+
+# ─── Boards : conversions et helpers ────────────────────────────────
+
+_CARD_FIELDS = {"title", "description", "due", "done", "labels", "checklist", "recording_id"}
+
+
+def _row_to_board(r: sqlite3.Row) -> Board:
+    return Board(id=r["id"], name=r["name"], position=r["position"], created_at=_dt(r["created_at"]))
+
+
+def _row_to_list(r: sqlite3.Row) -> BoardList:
+    return BoardList(id=r["id"], board_id=r["board_id"], name=r["name"], position=r["position"])
+
+
+def _row_to_card(r: sqlite3.Row) -> Card:
+    due = None
+    if r["due"]:
+        try:
+            due = date.fromisoformat(r["due"])
+        except ValueError:
+            due = None
+    return Card(
+        id=r["id"], list_id=r["list_id"], title=r["title"], description=r["description"] or "",
+        position=r["position"], due=due, done=bool(r["done"]),
+        labels=[k for k in json.loads(r["labels"] or "[]") if k in LABEL_KEYS],
+        checklist=[ChecklistItem.from_dict(i) for i in json.loads(r["checklist"] or "[]")],
+        recording_id=r["recording_id"], created_at=_dt(r["created_at"]), updated_at=_dt(r["updated_at"]),
+    )
+
+
+def _card_values(fields: dict) -> dict:
+    """Champs d'une carte → valeurs SQL."""
+    out: dict = {}
+    for k, v in fields.items():
+        if k == "title":
+            v = str(v).strip()
+        elif k == "due":
+            v = v.isoformat() if isinstance(v, date) else (v or None)
+        elif k == "done":
+            v = int(bool(v))
+        elif k == "labels":
+            v = json.dumps([x for x in LABEL_KEYS if x in set(v)])  # ordre stable, valeurs connues
+        elif k == "checklist":
+            v = json.dumps([(i.to_dict() if isinstance(i, ChecklistItem) else i) for i in v], ensure_ascii=False)
+        out[k] = v
+    return out
+
+
+def _renumber_cards(conn: sqlite3.Connection, list_id: int, ids: list[int] | None = None) -> None:
+    if ids is None:
+        ids = [r[0] for r in conn.execute("SELECT id FROM cards WHERE list_id = ? ORDER BY position, id", (list_id,))]
+    conn.executemany("UPDATE cards SET position = ? WHERE id = ?", [(i, cid) for i, cid in enumerate(ids)])
+
+
+def _renumber_lists(conn: sqlite3.Connection, board_id: int, ids: list[int] | None = None) -> None:
+    if ids is None:
+        ids = [r[0] for r in conn.execute("SELECT id FROM board_lists WHERE board_id = ? ORDER BY position, id", (board_id,))]
+    conn.executemany("UPDATE board_lists SET position = ? WHERE id = ?", [(i, lid) for i, lid in enumerate(ids)])
 
 
 def _fts_query(query: str) -> str:

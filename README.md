@@ -46,9 +46,20 @@ noter doctor
 - **Liste** groupée par jour (aujourd'hui, hier, cette semaine…), un glyphe d'état par ligne (prêt, en cours animé, à traiter, échec), durée, projet et tags.
 - **Fiche d'un enregistrement** : titre, projet, tags et notes modifiables en place. En tête, la **timeline audio** : onde du call, couloir des speakers en couleurs, tête de lecture ; clic pour se déplacer. Dessous, deux colonnes : la synthèse (en bref, points clés, décisions, actions cochables avec responsable et échéance) et le transcript horodaté avec avatars des speakers, synchronisé à la lecture (double-clic pour écouter un passage, clic droit pour renommer un speaker).
 - **Console d'enregistrement** : voyant, compteur, titre, vumètres micro et système, bouton Arrêter.
+- **Tâches** : des boards façon Trello, directement dans l'app (voir ci-dessous).
 - **Recherche** plein texte dans transcripts, résumés et titres ; un résultat ouvre la fiche au bon passage, les occurrences sont marquées sur la timeline.
 - **Import** par bouton ou glisser-déposer. **Réglages** (clé API, modèles, langue) dans `~/Noter/.env`.
 - Thème clair ou sombre selon le système, typographie IBM Plex (sans et mono), une seule couleur d'accent : le rouge du REC.
+
+### Tâches (boards)
+
+Section **Tâches** du rail : un item par board, `+` pour en créer un (il démarre avec *À faire / En cours / Terminé*).
+
+- **Listes** côte à côte, qui défilent horizontalement. Clic sur le titre pour renommer, glisser le titre pour réordonner, menu `…` pour déplacer ou supprimer la liste. « Ajouter une liste » en bout de rangée.
+- **Cartes** : « Ajouter une carte » en bas de chaque liste (`Entrée` valide et reste ouvert pour enchaîner, `Maj+Entrée` = saut de ligne, `Échap` annule). On les **glisse-dépose** d'une liste à l'autre ou dans la même liste ; un cadre pointillé montre où elle atterrit, et le board défile tout seul quand on longe un bord.
+- **Fiche d'une carte** (clic) : titre, **étiquettes** colorées, **échéance** (en retard = rouge, imminente = ambre, terminée = vert), description, **checklist** avec progression, déplacement vers une autre liste, suppression. Tout s'enregistre au fil de l'eau.
+- **Filtre** en haut du board : titre, description ou nom d'étiquette (`⌘F`).
+- **Lien avec les enregistrements** : dans le compte-rendu, chaque action a un bouton *Ajouter aux tâches* qui crée une carte (responsable et échéance reprises, lien vers l'enregistrement). Le bouton devient une coche qui ouvre la carte, et la carte ouvre l'enregistrement d'origine. Les boards vivent dans `~/Noter/noter.db`.
 
 Raccourcis : `⌘R` enregistrer, `⌘⇧R` micro seul, `⌘.` arrêter, `⌘I` importer, `⌘F` rechercher, `⌘,` réglages, `⌘⌫` supprimer.
 
@@ -110,12 +121,13 @@ src/noter/
 ├── service.py        façade unique (CLI, app) : enregistrer, importer, récupérer
 ├── pipeline.py       transcribe → summarize → fichiers de sortie
 ├── jobs.py           file de jobs + worker
-├── storage/          SQLite (db, migrations, repo) et arborescence disque (files)
+├── storage/          SQLite (db, migrations, repo : enregistrements, boards, cartes, jobs) et arborescence disque (files)
 ├── audio/            devices, recorder (streaming), mixer
 ├── transcription/    moteurs Whisper + diarisation
 ├── analyzer/         prompts + Claude (sortie structurée)
 ├── export/           PDF
-├── ui/               app desktop PySide6 : theme (tokens), icons, widgets/ (rail, liste, timeline, console…)
+├── ui/               app desktop PySide6 : theme (tokens), icons, widgets/ (rail, liste, timeline, console, board…),
+│                     board_view (tâches), card_dialog (fiche d'une carte)
 ├── macapp.py         bundle Noter.app
 ├── cli.py            ligne de commande
 └── launchd.py        LaunchAgent macOS

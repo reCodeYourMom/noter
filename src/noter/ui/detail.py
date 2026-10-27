@@ -85,6 +85,7 @@ class _PeaksTask(QRunnable):
 
 class RecordingDetail(QWidget):
     changed = Signal()
+    card_requested = Signal(int)  # ouvrir la carte d'une action déjà ajoutée à un board
 
     def __init__(self, service: Service, parent=None):
         super().__init__(parent)
@@ -394,6 +395,7 @@ class RecordingDetail(QWidget):
         if summary.actions:
             self.summary_lay.addSpacing(12)
             self.summary_lay.addWidget(section_label("Actions"))
+            cards = {c.title: c for c in self.repo.cards_for_recording(summary.recording_id)}
             for i, a in enumerate(summary.actions):
                 cb = QCheckBox()
                 owner = f'<b style="color:{t.ink}">{_esc(a.owner)}</b>&nbsp;&nbsp;' if a.owner else ""
@@ -414,6 +416,7 @@ class RecordingDetail(QWidget):
                 lab.mousePressEvent = lambda _e, c=cb: c.toggle()  # type: ignore[method-assign]
                 rl.addWidget(cb, 0, Qt.AlignmentFlag.AlignTop)
                 rl.addWidget(lab, 1)
+                rl.addWidget(self._board_button(i, a.text, cards), 0, Qt.AlignmentFlag.AlignTop)
                 self.summary_lay.addWidget(row)
 
         self.summary_lay.addSpacing(14)
@@ -453,6 +456,38 @@ class RecordingDetail(QWidget):
     def _save_notes(self) -> None:
         if self.rec and (self.notes.toPlainText() or None) != self.rec.notes:
             self._save(notes=self.notes.toPlainText() or None)
+
+    def _board_button(self, idx: int, text: str, cards: dict) -> QToolButton:
+        """« → Board » d'une action : crée la carte, ou ouvre celle qui existe déjà."""
+        t = theme.current()
+        card = cards.get(text.strip())
+        btn = tool_button("check" if card else "board", ghost=True)
+        btn.setIcon(icons.icon("check" if card else "board", t.ok if card else t.ink_3, 14))
+        btn.setToolTip("Déjà dans un board : ouvrir la carte" if card else "Ajouter aux tâches (board)")
+        if card:
+            btn.clicked.connect(lambda _=False, cid=card.id: self.card_requested.emit(cid))
+        else:
+            btn.clicked.connect(lambda _=False, i=idx, b=btn: self._to_board(i, b))
+        return btn
+
+    def _to_board(self, idx: int, anchor: QWidget) -> None:
+        if not self.rec:
+            return
+        boards = self.repo.list_boards()
+        if len(boards) <= 1:
+            self._create_card(idx, boards[0].id if boards else None)
+            return
+        menu = QMenu(self)
+        for b in boards:
+            menu.addAction(b.name, lambda bid=b.id: self._create_card(idx, bid))
+        menu.exec(anchor.mapToGlobal(anchor.rect().bottomLeft()))
+
+    def _create_card(self, idx: int, board_id: int | None) -> None:
+        if not self.rec:
+            return
+        self.service.card_from_action(self.rec.id, idx, board_id)
+        self._fill_summary()
+        self.changed.emit()
 
     def _toggle_action(self, idx: int, checked: bool) -> None:
         if not self.rec:

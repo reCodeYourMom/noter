@@ -120,8 +120,44 @@ CREATE TRIGGER IF NOT EXISTS summaries_au AFTER UPDATE ON summaries BEGIN
 END;
 """
 
+# v2 : gestion de tâches (boards → listes → cartes), façon Trello
+SCHEMA_V2 = """
+CREATE TABLE IF NOT EXISTS boards (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL,
+    position   INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS board_lists (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    board_id  INTEGER NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+    name      TEXT NOT NULL,
+    position  INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_board_lists_board ON board_lists(board_id, position);
+
+CREATE TABLE IF NOT EXISTS cards (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    list_id       INTEGER NOT NULL REFERENCES board_lists(id) ON DELETE CASCADE,
+    title         TEXT NOT NULL,
+    description   TEXT NOT NULL DEFAULT '',
+    position      INTEGER NOT NULL DEFAULT 0,
+    due           TEXT,
+    done          INTEGER NOT NULL DEFAULT 0,
+    labels        TEXT NOT NULL DEFAULT '[]',
+    checklist     TEXT NOT NULL DEFAULT '[]',
+    recording_id  TEXT REFERENCES recordings(id) ON DELETE SET NULL,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cards_list ON cards(list_id, position);
+CREATE INDEX IF NOT EXISTS idx_cards_recording ON cards(recording_id);
+"""
+
 MIGRATIONS: list[tuple[int, str]] = [
     (1, SCHEMA_V1),
+    (2, SCHEMA_V2),
 ]
 
 CURRENT_VERSION = MIGRATIONS[-1][0]

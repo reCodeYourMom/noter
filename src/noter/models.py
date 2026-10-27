@@ -144,6 +144,63 @@ class Job:
     finished_at: datetime | None = None
 
 
+# Couleurs d'étiquettes, façon Trello (la teinte exacte dépend du thème : voir ui/theme.py)
+LABEL_KEYS = ("green", "yellow", "orange", "red", "purple", "blue")
+LABEL_NAMES_FR = {"green": "Vert", "yellow": "Jaune", "orange": "Orange", "red": "Rouge", "purple": "Violet", "blue": "Bleu"}
+
+
+@dataclass
+class Board:
+    id: int
+    name: str
+    position: int = 0
+    created_at: datetime | None = None
+
+
+@dataclass
+class BoardList:
+    id: int
+    board_id: int
+    name: str
+    position: int = 0
+
+
+@dataclass
+class ChecklistItem:
+    text: str
+    done: bool = False
+
+    def to_dict(self) -> dict:
+        return {"text": self.text, "done": self.done}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> ChecklistItem:
+        return cls(text=str(d.get("text", "")), done=bool(d.get("done", False)))
+
+
+@dataclass
+class Card:
+    id: int
+    list_id: int
+    title: str
+    description: str = ""
+    position: int = 0
+    due: date | None = None
+    done: bool = False  # échéance terminée (coche verte, comme Trello)
+    labels: list[str] = field(default_factory=list)
+    checklist: list[ChecklistItem] = field(default_factory=list)
+    recording_id: str | None = None  # enregistrement d'où vient la carte
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+    @property
+    def checklist_progress(self) -> tuple[int, int]:
+        return sum(1 for i in self.checklist if i.done), len(self.checklist)
+
+    def is_overdue(self, today: date | None = None) -> bool:
+        return bool(self.due and not self.done and self.due < (today or date.today()))
+
+
 FR_DAYS = ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."]
 FR_DAYS_LONG = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
 FR_MONTHS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."]

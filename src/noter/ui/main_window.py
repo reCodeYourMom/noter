@@ -6,6 +6,7 @@ from PySide6.QtGui import QAction, QCloseEvent, QDragEnterEvent, QDropEvent, QKe
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListView,
@@ -23,6 +24,7 @@ from noter.models import Job, JobStatus, Recording, RecordingStatus, format_date
 from noter.service import AUDIO_EXTENSIONS
 from noter.storage.repo import SearchHit
 from noter.ui import icons, theme
+from noter.ui.board_view import BoardView
 from noter.ui.bridge import ServiceBridge
 from noter.ui.detail import RecordingDetail
 from noter.ui.widgets.console import RecordingConsole
@@ -79,7 +81,22 @@ class MainWindow(QMainWindow):
         self.rail = NavRail()
         self.rail.selected.connect(self._on_nav)
         self.rail.settings_requested.connect(self._open_settings)
+        self.rail.board_add_requested.connect(self._new_board)
         root.addWidget(self.rail)
+
+        # Deux pages : bibliothèque d'enregistrements (liste + fiche) ou board de tâches
+        self.workspace = QStackedWidget()
+        root.addWidget(self.workspace, 1)
+        library = QWidget()
+        lib = QHBoxLayout(library)
+        lib.setContentsMargins(0, 0, 0, 0)
+        lib.setSpacing(0)
+        self.workspace.addWidget(library)
+        self.board_view = BoardView(self.service)
+        self.board_view.changed.connect(self._schedule_refresh)
+        self.board_view.board_changed.connect(self._on_boards_changed)
+        self.board_view.recording_requested.connect(self.open_recording)
+        self.workspace.addWidget(self.board_view)
 
         # Colonne liste
         listcol = QWidget()
@@ -126,12 +143,13 @@ class MainWindow(QMainWindow):
         self.list_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.stack.addWidget(self.list_empty)
         ll.addWidget(self.stack, 1)
-        root.addWidget(listcol)
+        lib.addWidget(listcol)
 
         # Zone principale
         self.main_stack = QStackedWidget()
         self.detail = RecordingDetail(self.service)
         self.detail.changed.connect(self._schedule_refresh)
+        self.detail.card_requested.connect(self.open_card)
         self.console = RecordingConsole()
         self.console.stop_requested.connect(self.bridge.stop_recording)
         self.console.title_changed.connect(self._set_live_title)
@@ -145,7 +163,7 @@ class MainWindow(QMainWindow):
         for w in (self.detail, self.console, self.empty, self.placeholder):
             self.main_stack.addWidget(w)
         self.main_stack.setCurrentWidget(self.placeholder)
-        root.addWidget(self.main_stack, 1)
+        lib.addWidget(self.main_stack, 1)
         self.setCentralWidget(central)
 
     def _shortcuts(self) -> None:
@@ -161,12 +179,26 @@ class MainWindow(QMainWindow):
         self.a_stop = act("Ctrl+.", self.bridge.stop_recording)
         self.a_import = act("Ctrl+I", self._import_dialog)
         self.a_settings = act("Ctrl+,", self._open_settings)
-        act("Ctrl+F", lambda: (self.search.setFocus(), self.search.selectAll()))
-        act("Ctrl+Backspace", lambda: self.detail._delete() if self.detail.rec and self.main_stack.currentWidget() is self.detail else None)
+        act("Ctrl+F", self._focus_search)
+        act("Ctrl+Backspace", self._delete_current)
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(250)
         self._search_timer.timeout.connect(self._run_search)
+
+    @property
+    def in_board(self) -> bool:
+        return self.workspace.currentWidget() is self.board_view
+
+    def _focus_search(self) -> None:
+        field = self.board_view.filter if self.in_board else self.search
+        field.setFocus()
+        field.selectAll()
+
+    def _delete_current(self) -> None:
+        # Jamais depuis un board : la fiche d'enregistrement est alors cachée derrière.
+        if not self.in_board and self.detail.rec and self.main_stack.currentWidget() is self.detail:
+            self.detail._delete()
 
     # ─── Rafraîchissement ───────────────────────────────────────────
 
@@ -188,7 +220,9 @@ class MainWindow(QMainWindow):
                 proj[r.project] = proj.get(r.project, 0) + 1
             for tg in r.tags:
                 tags[tg] = tags.get(tg, 0) + 1
-        self.rail.populate(counts, sorted(proj.items()), sorted(tags.items()))
+        card_counts = self.repo.card_counts()
+        boards = [(b.id, b.name, card_counts.get(b.id, 0)) for b in self.repo.list_boards()]
+        self.rail.populate(counts, sorted(proj.items()), sorted(tags.items()), boards)
 
         self.list_model.refresh()
         searching = bool(self.search.text().strip())
@@ -228,6 +262,11 @@ class MainWindow(QMainWindow):
     # ─── Navigation / sélection ─────────────────────────────────────
 
     def _on_nav(self, key: NavKey) -> None:
+        if key.kind == "board":
+            self.board_view.set_board(int(key.value))  # type: ignore[arg-type]
+            self.workspace.setCurrentWidget(self.board_view)
+            return
+        self.workspace.setCurrentIndex(0)
         f = self.list_model.filter
         f.kind, f.value = key.kind, key.value
         self.search.clear()
@@ -252,6 +291,41 @@ class MainWindow(QMainWindow):
             return
         self.detail.load(recording_id, seek_to=seek_to, markers=markers)
         self.main_stack.setCurrentWidget(self.detail)
+
+    # ─── Tâches ─────────────────────────────────────────────────────
+
+    def _new_board(self) -> None:
+        name, ok = QInputDialog.getText(self, "Nouveau board", "Nom du board", text="")
+        if ok and name.strip():
+            self.create_board(name)
+
+    def create_board(self, name: str) -> None:
+        board = self.service.create_board(name)
+        self.refresh()
+        self.rail.select(NavKey("board", str(board.id)))
+
+    def _on_boards_changed(self) -> None:
+        """Un board a été renommé ou supprimé : on remet le rail d'aplomb."""
+        self.refresh()
+        key = self.rail.current
+        if key.kind == "board" and self.repo.get_board(int(key.value)) is None:  # type: ignore[arg-type]
+            self.rail.select(NavKey("all"))
+
+    def open_card(self, card_id: int) -> None:
+        board = self.repo.board_of_card(card_id)
+        if board is None:
+            return
+        self.rail.select(NavKey("board", str(board.id)))
+        self.board_view.open_card(card_id)
+
+    def open_recording(self, recording_id: str) -> None:
+        self.rail.select(NavKey("all"))
+        row = self.list_model.row_of(recording_id)
+        if row >= 0:
+            self.list_view.selectionModel().blockSignals(True)
+            self.list_view.setCurrentIndex(self.list_model.index(row))
+            self.list_view.selectionModel().blockSignals(False)
+        self.show_recording(recording_id)
 
     # ─── Recherche ──────────────────────────────────────────────────
 
@@ -285,6 +359,8 @@ class MainWindow(QMainWindow):
     # ─── Enregistrement ─────────────────────────────────────────────
 
     def _on_rec_started(self, rec: Recording) -> None:
+        if self.in_board:  # la console d'enregistrement vit dans la bibliothèque
+            self.rail.select(NavKey("all"))
         self.btn_record.setEnabled(False)
         self.a_record.setEnabled(False)
         self.a_record_mic.setEnabled(False)

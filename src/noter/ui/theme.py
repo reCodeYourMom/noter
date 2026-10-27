@@ -36,6 +36,10 @@ class Tokens:
     busy_soft: str
     speakers: tuple[str, ...]
     is_dark: bool
+    list_bg: str     # fond d'une liste de board
+    card_bg: str     # fond d'une carte
+    card_hover: str
+    labels: dict[str, str]  # étiquettes de cartes (clé → couleur)
 
 
 LIGHT = Tokens(
@@ -47,6 +51,8 @@ LIGHT = Tokens(
     ok="#2D9A68", busy="#D08A1E", busy_soft="rgba(208,138,30,0.14)",
     speakers=("#4E6FB3", "#5A9A6F", "#9A5AA0", "#C27A4C", "#3F8F9E", "#A6703A"),
     is_dark=False,
+    list_bg="#EBEBE8", card_bg="#FFFFFF", card_hover="#F8F8F6",
+    labels={"green": "#4FAE6A", "yellow": "#E2B203", "orange": "#E8802A", "red": "#E5484D", "purple": "#9F6FD0", "blue": "#3B7DD8"},
 )
 
 DARK = Tokens(
@@ -58,6 +64,8 @@ DARK = Tokens(
     ok="#4CB381", busy="#E0A043", busy_soft="rgba(224,160,67,0.16)",
     speakers=("#7D9BE0", "#7FC296", "#C48BCB", "#E0A078", "#6FBFCF", "#D4A06A"),
     is_dark=True,
+    list_bg="#1B1C1E", card_bg="#26282B", card_hover="#2D3033",
+    labels={"green": "#5CBE78", "yellow": "#E5C13A", "orange": "#EE9A52", "red": "#F0575C", "purple": "#B48AE0", "blue": "#6AA0EC"},
 )
 
 _current: Tokens = LIGHT
@@ -233,6 +241,34 @@ QFrame#pillRec QLabel {{ color: {t.rec}; font-size: 12px; font-weight: 500; }}
 QFrame#hline {{ background: {t.line}; max-height: 1px; min-height: 1px; border: none; }}
 QFrame#vline {{ background: {t.line}; max-width: 1px; min-width: 1px; border: none; }}
 QDialog QLabel {{ color: {t.ink}; }}
+
+/* Boards */
+QWidget#board {{ background: {t.canvas}; }}
+QFrame#boardList {{ background: {t.list_bg}; border-radius: 10px; }}
+QLabel#listTitle {{ color: {t.ink}; font-weight: 600; padding: 4px 6px; }}
+QLineEdit#listTitleEdit {{ background: {t.card_bg}; border: 1px solid {t.ink_3}; border-radius: 6px; padding: 3px 5px; font-weight: 600; }}
+QLabel#listCount {{ color: {t.ink_3}; font-size: 12px; }}
+QFrame#card {{ background: {t.card_bg}; border: 1px solid {t.line}; border-bottom: 2px solid {t.line_2}; border-radius: 8px; }}
+QFrame#card:hover {{ background: {t.card_hover}; border-color: {t.line_2}; }}
+QFrame#card QLabel {{ background: transparent; }}
+QFrame#cardMatch {{ background: {t.card_bg}; border: 2px solid {t.ink}; border-radius: 8px; }}
+QFrame#dropMark {{ background: {t.sel}; border: 1px dashed {t.ink_4}; border-radius: 8px; }}
+QLabel#cardTitle {{ color: {t.ink}; }}
+QLabel#badge {{ color: {t.ink_3}; font-size: 11px; }}
+QPlainTextEdit#composer {{ background: {t.card_bg}; border: 1px solid {t.line_2}; border-radius: 8px; padding: 6px 8px; }}
+QPlainTextEdit#composer:focus {{ border: 1px solid {t.ink_3}; }}
+QToolButton#addCard {{ border: none; border-radius: 6px; padding: 6px 8px; color: {t.ink_2}; text-align: left; font-weight: 400; }}
+QToolButton#addCard:hover {{ background: {t.sel}; color: {t.ink}; }}
+QFrame#addList {{ background: {t.sel}; border-radius: 10px; }}
+QToolButton#boardTitle {{ border: none; border-radius: 6px; padding: 4px 8px; color: {t.ink}; font-size: 18px; font-weight: 600; }}
+QToolButton#boardTitle:hover {{ background: {t.sel}; }}
+QToolButton#railAdd {{ border: none; padding: 1px 5px; color: {t.ink_3}; }}
+QToolButton#railAdd:hover {{ background: {t.sel}; color: {t.ink}; }}
+QToolButton#labelPick {{ border: 2px solid transparent; border-radius: 6px; min-width: 30px; min-height: 22px; padding: 0; }}
+QProgressBar {{ background: {t.inset}; border: none; border-radius: 3px; max-height: 6px; min-height: 6px; }}
+QProgressBar::chunk {{ background: {t.ok}; border-radius: 3px; }}
+QDateEdit {{ background: {t.inset}; color: {t.ink}; border: 1px solid transparent; border-radius: 7px; padding: 5px 10px; }}
+QDateEdit:focus {{ border: 1px solid {t.ink_3}; }}
 QSlider::groove:horizontal {{ height: 3px; background: {t.inset}; border-radius: 1px; }}
 QSlider::sub-page:horizontal {{ background: {t.ink}; border-radius: 1px; }}
 QSlider::handle:horizontal {{ width: 10px; height: 10px; margin: -4px 0; border-radius: 5px; background: {t.ink}; }}

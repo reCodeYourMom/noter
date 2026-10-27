@@ -23,7 +23,7 @@ from noter.ui.widgets.common import clear_layout
 
 @dataclass(frozen=True)
 class NavKey:
-    kind: str  # all | active | failed | project | tag
+    kind: str  # all | active | failed | project | tag | board
     value: str | None = None
 
 
@@ -68,6 +68,7 @@ class NavItem(QToolButton):
 class NavRail(QWidget):
     selected = Signal(object)  # NavKey
     settings_requested = Signal()
+    board_add_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -155,7 +156,14 @@ class NavRail(QWidget):
         color = t.busy if busy else t.ok
         self.status_dot.setStyleSheet(f"background: {color}; border-radius: 5px;")
 
-    def populate(self, counts: dict[str, int], projects: list[tuple[str, int]], tags: list[tuple[str, int]]) -> None:
+    def populate(
+        self,
+        counts: dict[str, int],
+        projects: list[tuple[str, int]],
+        tags: list[tuple[str, int]],
+        boards: list[tuple[int, str, int]] | None = None,
+    ) -> None:
+        """`boards` : (id, nom, nombre de cartes)."""
         clear_layout(self.body_lay)
         self._items = []
         t = theme.current()
@@ -175,6 +183,26 @@ class NavRail(QWidget):
         add(NavItem(NavKey("all"), "Tous", "list", count=counts.get("all", 0)))
         add(NavItem(NavKey("active"), "En cours", "clock", count=counts.get("active", 0)))
         add(NavItem(NavKey("failed"), "Échecs", "alert", count=counts.get("failed", 0)))
+
+        # Section « Tâches » : un item par board, et un « + » pour en créer un
+        head = QWidget()
+        hl = QHBoxLayout(head)
+        hl.setContentsMargins(0, 0, 0, 0)
+        hl.setSpacing(0)
+        lab = QLabel("TÂCHES")
+        lab.setObjectName("section")
+        lab.setContentsMargins(8, 12, 8, 4)
+        plus = QToolButton()
+        plus.setObjectName("railAdd")
+        plus.setIcon(icons.icon("plus", t.ink_3, 13))
+        plus.setToolTip("Nouveau board")
+        plus.setCursor(Qt.CursorShape.PointingHandCursor)
+        plus.clicked.connect(self.board_add_requested.emit)
+        hl.addWidget(lab, 1)
+        hl.addWidget(plus, 0, Qt.AlignmentFlag.AlignBottom)
+        self.body_lay.addWidget(head)
+        for board_id, name, n in boards or []:
+            add(NavItem(NavKey("board", str(board_id)), name, "board", count=n))
         if projects:
             label("Projets")
             for name, n in projects:
