@@ -163,10 +163,14 @@ class BoardView(QWidget):
     def _make_column(self) -> ListColumn:
         col = ListColumn(self.repo)
         col.strip = self.strip
-        col.card_open.connect(self.open_card)
+        # Connexions différées : ces actions ouvrent une boucle modale (fiche, confirmation) puis reconstruisent
+        # le board. Lancées depuis le clic, elles détruiraient la carte ou la liste dont le gestionnaire de clic
+        # est encore en cours → plantage natif sous macOS. En file, elles partent une fois le clic terminé.
+        queued = Qt.ConnectionType.QueuedConnection
+        col.card_open.connect(self.open_card, queued)
         col.changed.connect(self._on_changed)
-        col.move_requested.connect(self._move_list)
-        col.delete_requested.connect(self._delete_list)
+        col.move_requested.connect(self._move_list, queued)
+        col.delete_requested.connect(self._delete_list, queued)
         col.drag_started.connect(self._drag_started)
         col.drag_finished.connect(self._drag_finished)
         return col

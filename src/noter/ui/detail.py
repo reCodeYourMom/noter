@@ -492,8 +492,12 @@ class RecordingDetail(QWidget):
             return
         menu = QMenu(self)
         for b in boards:
-            menu.addAction(b.name, lambda bid=b.id: self._create_card(idx, bid))
-        menu.exec(anchor.mapToGlobal(anchor.rect().bottomLeft()))
+            menu.addAction(b.name).setData(b.id)
+        # On agit après la fermeture du menu, pas pendant : créer la carte reconstruit la synthèse,
+        # dont le bouton qui a ouvert ce menu.
+        chosen = menu.exec(anchor.mapToGlobal(anchor.rect().bottomLeft()))
+        if chosen is not None:
+            self._create_card(idx, chosen.data())
 
     def _all_to_board(self) -> None:
         """Pour les calls d'avant l'ajout automatique : toutes les actions manquantes → cartes."""

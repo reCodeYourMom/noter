@@ -80,7 +80,8 @@ class MainWindow(QMainWindow):
         self.rail = NavRail()
         self.rail.selected.connect(self._on_nav)
         self.rail.settings_requested.connect(self._open_settings)
-        self.rail.board_add_requested.connect(self._new_board)
+        # Différé : la boîte de dialogue repeuple le rail, dont le bouton « + » qui vient d'être cliqué
+        self.rail.board_add_requested.connect(self._new_board, Qt.ConnectionType.QueuedConnection)
         self.rail.record_requested.connect(lambda: self.bridge.start_recording(True))
         self.rail.import_requested.connect(self._import_dialog)
         self.btn_record = self.rail.record_btn
@@ -152,7 +153,8 @@ class MainWindow(QMainWindow):
         self.main_stack = QStackedWidget()
         self.detail = RecordingDetail(self.service)
         self.detail.changed.connect(self._schedule_refresh)
-        self.detail.card_requested.connect(self.open_card)
+        # Différé : la fiche de carte est modale, et le bouton cliqué peut être reconstruit pendant qu'elle est ouverte
+        self.detail.card_requested.connect(self.open_card, Qt.ConnectionType.QueuedConnection)
         self.console = RecordingConsole()
         self.console.stop_requested.connect(self.bridge.stop_recording)
         self.console.title_changed.connect(self._set_live_title)

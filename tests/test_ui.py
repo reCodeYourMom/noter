@@ -450,6 +450,8 @@ def test_action_to_board_and_back(qapp, window, service, monkeypatch):
     assert len(buttons) == 1
     buttons[0].click()
     assert requested == [cards[0].id]
+    assert opened == []  # différé : la fiche (modale) s'ouvre une fois le clic terminé
+    _process(qapp, 50)
     assert opened == [cards[0].id]  # la carte s'ouvre, sur son board
     assert w.workspace.currentWidget() is w.board_view and w.board_view.board_id == board.id
 
@@ -684,3 +686,73 @@ def test_settings_dialog_saves_auto_tasks(qapp, home, settings):
     dlg.auto_tasks.setChecked(True)
     dlg.save()
     assert read_env(home / ".env")["NOTER_AUTO_TASKS"] == "true"
+
+
+
+# ─── Régression : plantage natif à la fermeture d'une fiche de carte ─
+
+
+def test_clicked_card_is_never_destroyed_while_its_click_is_still_running(qapp, board_window, service):
+    """Clic sur une carte → fiche modale → modification → le board se reconstruit.
+
+    Avant correction, la fiche s'ouvrait PENDANT le traitement du clic : la reconstruction détruisait la carte
+    cliquée, puis Qt revenait dans un objet libéré à la fermeture → « Python quit unexpectedly » sur macOS.
+    """
+    from PySide6.QtCore import QPoint, Qt, QTimer
+    from PySide6.QtTest import QTest
+
+    w, board, lists, cards = board_window
+    tile = w.board_view.strip.columns[0].tiles()[0]
+    click_done = [False]
+    destroyed_mid_click = []
+    tile.destroyed.connect(lambda *_: destroyed_mid_click.append(not click_done[0]))
+    seen = []
+
+    def in_dialog():
+        dlg = qapp.activeModalWidget()
+        if dlg is None:  # pas encore ouverte : on repasse
+            QTimer.singleShot(20, in_dialog)
+            return
+        seen.append(type(dlg).__name__)
+        dlg.label_buttons["red"].setChecked(True)  # → sauvegarde → le board se reconstruit sous la fiche
+        w._schedule_refresh()  # et le rafraîchissement global aussi, comme à la fin d'un job
+        QTimer.singleShot(400, dlg.accept)
+
+    QTimer.singleShot(20, in_dialog)
+    QTest.mouseClick(tile, Qt.MouseButton.LeftButton, pos=QPoint(20, 12))
+    click_done[0] = True
+    assert seen == []  # la fiche ne s'est pas ouverte dans le gestionnaire du clic
+    _process(qapp, 900)
+    assert seen == ["CardDialog"]
+    assert service.repo.get_card(cards[0].id).labels == ["red"]
+    assert destroyed_mid_click in ([], [False])  # détruite éventuellement, mais jamais au milieu de son clic
+
+
+def test_list_menu_actions_run_after_the_menu_and_click_are_done(qapp, board_window, service, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    w, board, lists, cards = board_window
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
+    col = w.board_view.strip.columns[0]
+    col.delete_requested.emit(col.list.id)  # ce que fait « Supprimer la liste… » dans le menu de la liste
+    assert service.repo.get_list(lists[0].id) is not None  # rien pendant le menu : la colonne y est encore utilisée
+    _process(qapp, 50)
+    assert service.repo.get_list(lists[0].id) is None and len(w.board_view.strip.columns) == 2
+
+
+def test_action_board_menu_creates_the_card_after_the_menu_closes(qapp, window, service, monkeypatch):
+    from PySide6.QtWidgets import QMenu, QToolButton
+
+    w, rec = window
+    service.create_board("Perso")
+    pro = service.create_board("Pro")
+    w.detail._fill_summary()
+    btn = next(b for b in w.detail.summary_box.findChildren(QToolButton) if b.toolTip().startswith("Ajouter aux tâches"))
+    class PickPro(QMenu):  # menu qui « choisit » Pro sans ouvrir de boucle modale
+        def exec(self, *_a):
+            return next(a for a in self.actions() if a.text() == "Pro")
+
+    monkeypatch.setattr("noter.ui.detail.QMenu", PickPro)
+    btn.click()
+    cards = service.repo.cards_for_recording(rec.id)
+    assert len(cards) == 1 and service.repo.board_of_card(cards[0].id).id == pro.id

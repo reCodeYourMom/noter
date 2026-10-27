@@ -1,6 +1,7 @@
 """Point d'entrée de l'app desktop : `noter-app`."""
 from __future__ import annotations
 
+import faulthandler
 import logging
 import signal
 import sys
@@ -14,6 +15,9 @@ logger = logging.getLogger("noter.ui")
 def main() -> int:
     settings = load_settings()
     setup_logging(settings.log_path, console=False)
+    # Un plantage natif (Qt, audio) ne passe pas par les exceptions Python : faulthandler écrit au moins la
+    # pile Python sur stderr, que Noter.app redirige vers ~/Noter/noter.log.
+    faulthandler.enable()
 
     def _excepthook(exc_type, exc, tb):
         logger.critical("Erreur non rattrapée", exc_info=(exc_type, exc, tb))
