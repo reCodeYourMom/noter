@@ -372,7 +372,8 @@ def test_server_entry_keeps_noter_home(home):
     entry = install.server_entry()
     assert entry["env"] == {"NOTER_HOME": str(home)}
     cmd = install.claude_code_command()
-    assert cmd[:5] == ["claude", "mcp", "add", "-s", "user"] and cmd[-2:] == ["-m", "noter.mcp_server"]
+    assert cmd[:8] == ["claude", "mcp", "add", "-s", "user", "noter", "-e", f"NOTER_HOME={home}"]
+    assert cmd[-2:] == ["-m", "noter.mcp_server"]
 
 
 def test_unnamed_speaker_can_be_renamed(server, service, wav, engine):

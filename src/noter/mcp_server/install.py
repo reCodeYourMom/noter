@@ -56,7 +56,8 @@ def is_installed_desktop(path: Path | None = None) -> bool:
 def claude_code_command(python: Path | None = None) -> list[str]:
     entry = server_entry(python)
     env = [x for k, v in entry.get("env", {}).items() for x in ("-e", f"{k}={v}")]
-    return ["claude", "mcp", "add", "-s", "user", *env, SERVER_NAME, "--", entry["command"], *entry["args"]]
+    # Le nom avant -e : `-e` prend plusieurs valeurs et avalerait le nom.
+    return ["claude", "mcp", "add", "-s", "user", SERVER_NAME, *env, "--", entry["command"], *entry["args"]]
 
 
 def install_claude_code(python: Path | None = None) -> tuple[bool, str]:
