@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     auto_summarize: bool = True
     auto_tasks: bool = True  # à la fin d'un résumé, chaque action devient une carte du premier board
 
+    # Apparence : auto (suit macOS) | light | dark
+    theme: str = "auto"
+
     # Whisper
     whisper_model: str = "large-v3"
     whisper_language: str | None = None  # None = auto-détection
@@ -56,6 +59,12 @@ class Settings(BaseSettings):
             return None
         v = str(v).strip().lower()
         return None if v in ("", "auto", "none") else v
+
+    @field_validator("theme", mode="before")
+    @classmethod
+    def _theme(cls, v):
+        v = str(v or "").strip().lower()
+        return v if v in ("auto", "light", "dark") else "auto"
 
     @field_validator("data_dir", "db_path", "log_path", mode="before")
     @classmethod

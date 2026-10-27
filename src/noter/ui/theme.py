@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import tempfile
+import weakref
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -86,6 +87,12 @@ DARK = Tokens(
 )
 
 _current: Tokens = LIGHT
+
+# Préférence d'apparence : « auto » suit macOS, « light » / « dark » la fixent (réglage NOTER_THEME).
+PREFERENCES = ("auto", "light", "dark")
+PREFERENCE_LABELS = {"auto": "Automatique (comme macOS)", "light": "Clair", "dark": "Sombre"}
+_preference = "auto"
+_listeners: list = []  # callables, ou weakref.WeakMethod pour les méthodes de widgets
 
 
 def aurora_stops(t: Tokens) -> list[tuple[float, str]]:
@@ -375,11 +382,59 @@ QProgressBar::chunk {{ background: {qss_gradient([(0.0, t.accent), (1.0, t.ok)])
 
 
 def apply(app, dark: bool | None = None) -> Tokens:
-    """Applique palette + QSS à l'application. Retourne les tokens actifs."""
+    """Applique palette + QSS à l'application, puis prévient les abonnés. Retourne les tokens actifs."""
     global _current
     if dark is None:
         dark = system_prefers_dark()
     _current = DARK if dark else LIGHT
     app.setPalette(build_palette(_current))
     app.setStyleSheet(build_qss(_current))
+    _notify()
     return _current
+
+
+def preference() -> str:
+    return _preference
+
+
+def normalize_preference(value: str | None) -> str:
+    v = (value or "").strip().lower()
+    return v if v in PREFERENCES else "auto"
+
+
+def set_preference(app, pref: str | None) -> Tokens:
+    """Applique un choix d'apparence (auto / light / dark) tout de suite, sans redémarrer."""
+    global _preference
+    _preference = normalize_preference(pref)
+    return apply(app, None if _preference == "auto" else _preference == "dark")
+
+
+def system_changed(app) -> None:
+    """macOS est passé en clair ou en sombre : on suit seulement en mode automatique."""
+    if _preference == "auto":
+        apply(app)
+
+
+def on_change(fn) -> None:
+    """Appelle `fn(tokens)` à chaque changement de thème.
+
+    Ce qui est peint (listes, onde, vumètres) suit tout seul ; ce qui a été construit avec une couleur
+    figée (icônes, styles en ligne) s'abonne ici. Une méthode de widget est gardée en référence faible.
+    """
+    if hasattr(fn, "__self__") and hasattr(fn, "__func__"):
+        fn = weakref.WeakMethod(fn)
+    _listeners.append(fn)
+
+
+def _notify() -> None:
+    for ref in list(_listeners):
+        fn = ref() if isinstance(ref, weakref.WeakMethod) else ref
+        if fn is None:
+            _listeners.remove(ref)
+            continue
+        try:
+            fn(_current)
+        except RuntimeError:  # widget Qt déjà détruit
+            _listeners.remove(ref)
+        except Exception:  # noqa: BLE001
+            logger.exception("Abonné au thème en erreur")

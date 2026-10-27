@@ -95,10 +95,9 @@ class Pill(QFrame):
         lay.addWidget(self.label)
 
 
-def tool_button(name: str, text: str = "", tokens: Tokens | None = None, ghost: bool = False, tip: str = "") -> QToolButton:
-    t = tokens or theme.current()
+def tool_button(name: str, text: str = "", ghost: bool = False, tip: str = "") -> QToolButton:
     b = QToolButton()
-    b.setIcon(icons.icon(name, t.ink_2, 14))
+    icons.bind(b, name, "ink_2", 14)
     if text:
         b.setText(text)
         b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)

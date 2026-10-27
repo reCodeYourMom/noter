@@ -756,3 +756,73 @@ def test_action_board_menu_creates_the_card_after_the_menu_closes(qapp, window, 
     btn.click()
     cards = service.repo.cards_for_recording(rec.id)
     assert len(cards) == 1 and service.repo.board_of_card(cards[0].id).id == pro.id
+
+
+# ─── Thème : Automatique / Clair / Sombre, appliqué sans redémarrer ─
+
+
+@pytest.fixture
+def restore_theme(qapp):
+    yield
+    theme.set_preference(qapp, "light")  # les autres tests attendent le thème clair
+
+
+def test_theme_preference_and_listeners(qapp, restore_theme):
+    from noter.config import Settings
+
+    assert Settings(theme=" Dark ").theme == "dark" and Settings(theme="rose").theme == "auto"
+    seen = []
+
+    class Watcher:
+        def on_theme(self, t):
+            seen.append(t.name)
+
+    watcher = Watcher()
+    theme.on_change(watcher.on_theme)
+    assert theme.set_preference(qapp, "dark").is_dark and theme.preference() == "dark"
+    assert theme.current() is theme.DARK and seen == ["dark"]
+    theme.system_changed(qapp)  # macOS change d'apparence : ignoré, l'utilisateur a fixé « Sombre »
+    assert theme.current() is theme.DARK and seen == ["dark"]
+    theme.set_preference(qapp, "n'importe quoi")  # valeur inconnue → automatique (ici : système clair)
+    assert theme.preference() == "auto" and seen == ["dark", "light"]
+    del watcher  # référence faible : un widget disparu n'est plus appelé
+    theme.set_preference(qapp, "dark")
+    assert seen == ["dark", "light"]
+
+
+def test_switching_theme_live_recolors_the_window(qapp, window, restore_theme):
+    from noter.ui import icons
+
+    w, rec = window
+    theme.set_preference(qapp, "light")
+    dark = theme.DARK
+    theme.set_preference(qapp, "dark")
+    _process(qapp, 50)
+    # Icônes liées au thème (recherche, import, outils de la fiche)
+    search_icon = w.search.actions()[0].icon()
+    assert search_icon.cacheKey() == icons.icon("search", dark.ink_3, 14).cacheKey()
+    assert w.rail.import_btn.icon().cacheKey() == icons.icon("import", dark.ink_2, 16).cacheKey()
+    assert w.detail.btn_folder.icon().cacheKey() == icons.icon("folder", dark.ink_2, 14).cacheKey()
+    # Éléments reconstruits : rail (item sélectionné), titre de section, console
+    selected = next(it for it in w.rail._items if it.isChecked())
+    assert dark.accent_ink in selected.lab.styleSheet()
+    assert dark.accent in w.detail.transcript_label.text()
+    assert w.console.glow.color() == theme.soft(dark.rec, 0.45)
+    assert dark.canvas in qapp.styleSheet()
+    # Et retour au clair, toujours sans redémarrer
+    theme.set_preference(qapp, "light")
+    assert w.search.actions()[0].icon().cacheKey() == icons.icon("search", theme.LIGHT.ink_3, 14).cacheKey()
+
+
+def test_settings_offer_the_theme_and_apply_it_immediately(qapp, window, home, settings, restore_theme):
+    from noter.ui.settings_dialog import SettingsDialog
+
+    w, rec = window
+    dlg = SettingsDialog(settings)
+    assert [dlg.appearance.itemData(i) for i in range(dlg.appearance.count())] == ["auto", "light", "dark"]
+    dlg.appearance.setCurrentIndex(dlg.appearance.findData("dark"))
+    dlg.save()
+    assert read_env(home / ".env")["NOTER_THEME"] == "dark"
+    w.settings_saved(dlg.values())
+    assert theme.current() is theme.DARK and w.service.settings.theme == "dark"
+    assert "apparence appliquée" in w.statusBar().currentMessage()

@@ -46,12 +46,12 @@ def main() -> int:
 
     theme.load_fonts()
     app.setFont(QFont(theme.SANS, 13))
-    theme.apply(app)
+    theme.set_preference(app, settings.theme)
     icon_path = theme.FONT_DIR.parent / "AppIcon.png"
     if icon_path.exists():
         app.setWindowIcon(QIcon(str(icon_path)))
-    try:  # suivre le passage clair/sombre du système
-        app.styleHints().colorSchemeChanged.connect(lambda _s: theme.apply(app))
+    try:  # suivre le passage clair/sombre du système (en mode automatique seulement)
+        app.styleHints().colorSchemeChanged.connect(lambda _s: theme.system_changed(app))
     except Exception:  # noqa: BLE001
         pass
 

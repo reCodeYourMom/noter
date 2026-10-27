@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QPoint, Qt, QTimer, Signal
-from PySide6.QtGui import QCursor, QFont
+from PySide6.QtGui import QCursor, QFont, QIcon
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from noter.service import Service
-from noter.ui import icons, theme
+from noter.ui import icons
 from noter.ui.card_dialog import CardDialog
 from noter.ui.widgets.board import AddListColumn, ListColumn, ListStrip
 from noter.ui.widgets.common import tool_button
@@ -41,7 +41,6 @@ class BoardView(QWidget):
         self.repo = service.repo
         self.board_id: int | None = None
         self._dragging = False
-        t = theme.current()
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -61,7 +60,7 @@ class BoardView(QWidget):
         self.filter.setPlaceholderText("Filtrer les cartes")
         self.filter.setClearButtonEnabled(True)
         self.filter.setFixedWidth(220)
-        self.filter.addAction(icons.icon("search", t.ink_3, 14), QLineEdit.ActionPosition.LeadingPosition)
+        icons.bind(self.filter.addAction(QIcon(), QLineEdit.ActionPosition.LeadingPosition), "search", "ink_3", 14)
         self.filter.textChanged.connect(self._apply_filter)
         self.menu_btn = tool_button("more", ghost=True, tip="Actions du board")
         self.menu_btn.clicked.connect(self._open_menu)

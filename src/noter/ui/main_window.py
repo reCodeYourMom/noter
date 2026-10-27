@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt, QTimer
-from PySide6.QtGui import QAction, QCloseEvent, QDragEnterEvent, QDropEvent, QKeySequence
+from PySide6.QtGui import QAction, QCloseEvent, QDragEnterEvent, QDropEvent, QIcon, QKeySequence
 from PySide6.QtWidgets import (
+    QApplication,
     QFileDialog,
     QHBoxLayout,
     QInputDialog,
@@ -63,6 +64,7 @@ class MainWindow(QMainWindow):
         self._status_timer.timeout.connect(self._refresh_status)
         self._status_timer.start()
         self.refresh()
+        theme.on_change(self._on_theme)
         if self.service.is_recording and self.service.current_recording:
             self._on_rec_started(self.service.current_recording)
         elif self.list_model.recording_count():
@@ -71,7 +73,6 @@ class MainWindow(QMainWindow):
     # ─── Construction ───────────────────────────────────────────────
 
     def _build(self) -> None:
-        t = theme.current()
         central = QWidget()
         root = QHBoxLayout(central)
         root.setContentsMargins(0, 0, 0, 0)
@@ -122,7 +123,7 @@ class MainWindow(QMainWindow):
         self.search = QLineEdit()
         self.search.setPlaceholderText("Rechercher dans les calls    ⌘F")
         self.search.setClearButtonEnabled(True)
-        self.search.addAction(icons.icon("search", t.ink_3, 14), QLineEdit.ActionPosition.LeadingPosition)
+        icons.bind(self.search.addAction(QIcon(), QLineEdit.ActionPosition.LeadingPosition), "search", "ink_3", 14)
         self.search.textChanged.connect(self._on_search_text)
         self.search.returnPressed.connect(self._run_search)
         top.addWidget(self.search)
@@ -430,13 +431,29 @@ class MainWindow(QMainWindow):
 
     # ─── Divers ─────────────────────────────────────────────────────
 
+    def _on_theme(self, _t) -> None:
+        """Nouveau thème : on reconstruit ce qui a été bâti avec les anciennes couleurs, et on repeint le reste."""
+        self.refresh()  # rail, liste, titre de vue
+        self.board_view.refresh()
+        for w in QApplication.allWidgets():
+            w.update()
+
     def _open_settings(self) -> None:
         from noter.ui.settings_dialog import SettingsDialog
 
         dlg = SettingsDialog(self.service.settings, self)
         if dlg.exec():
             dlg.save()
-            self.statusBar().showMessage("Réglages enregistrés : relance Noter pour les appliquer.", 6000)
+            self.settings_saved(dlg.values())
+
+    def settings_saved(self, values: dict[str, str]) -> None:
+        pref = theme.normalize_preference(values.get("NOTER_THEME"))
+        changed = pref != theme.preference()
+        self.service.settings.theme = pref
+        if changed:
+            theme.set_preference(QApplication.instance(), pref)  # appliqué tout de suite
+        msg = "Réglages enregistrés" + (" ; apparence appliquée" if changed else "")
+        self.statusBar().showMessage(msg + ". Les autres changements s'appliquent au prochain lancement de Noter.", 6000)
 
     def closeEvent(self, e: QCloseEvent) -> None:  # noqa: N802
         e.ignore()

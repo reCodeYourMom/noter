@@ -63,7 +63,7 @@ class SettingsDialog(QDialog):
     def __init__(self, settings: Settings, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Réglages Noter")
-        self.setMinimumWidth(460)
+        self.setMinimumWidth(520)
         env = read_env(env_path())
 
         self.api_key = QLineEdit(env.get("ANTHROPIC_API_KEY", settings.anthropic_api_key))
@@ -81,7 +81,12 @@ class SettingsDialog(QDialog):
         self.language.setPlaceholderText("auto (ou fr, en…)")
         self.auto = QCheckBox("Résumer automatiquement après transcription")
         self.auto.setChecked(env.get("NOTER_AUTO_SUMMARIZE", str(settings.auto_summarize)).lower() in ("1", "true", "yes"))
-        self.auto_tasks = QCheckBox("Ajouter toutes les actions aux tâches à la fin de chaque call")
+        self.appearance = QComboBox()
+        for key in theme.PREFERENCES:
+            self.appearance.addItem(theme.PREFERENCE_LABELS[key], key)
+        self.appearance.setCurrentIndex(max(0, self.appearance.findData(
+            theme.normalize_preference(env.get("NOTER_THEME", settings.theme)))))
+        self.auto_tasks = QCheckBox("Ajouter les actions aux tâches après chaque call")
         self.auto_tasks.setToolTip("Une carte par action, en haut de la liste « À faire » du premier board de la section Tâches.")
         self.auto_tasks.setChecked(env.get("NOTER_AUTO_TASKS", str(settings.auto_tasks)).lower() in ("1", "true", "yes"))
 
@@ -97,6 +102,9 @@ class SettingsDialog(QDialog):
         form.addRow(title)
         form.addRow(sub)
         form.addItem(QSpacerItem(0, 8))
+        form.addRow(section_label("Apparence", t.rec))
+        form.addRow("Thème", self.appearance)
+        form.addItem(QSpacerItem(0, 6))
         form.addRow(section_label("Résumé · Claude", t.accent))
         form.addRow("Clé API Anthropic", self.api_key)
         form.addRow("Modèle Claude", self.model)
@@ -108,7 +116,7 @@ class SettingsDialog(QDialog):
         form.addRow("Modèle Whisper", self.whisper)
         form.addRow("Langue forcée", self.language)
         form.addItem(QSpacerItem(0, 6))
-        note = QLabel(f"Fichier : {env_path()}\nLes changements s'appliquent au redémarrage de Noter.")
+        note = QLabel(f"Fichier : {env_path()}\nL’apparence s’applique tout de suite, le reste au prochain lancement de Noter.")
         note.setObjectName("gen")
         note.setWordWrap(True)
         form.addRow(note)
@@ -130,6 +138,7 @@ class SettingsDialog(QDialog):
             "NOTER_WHISPER_LANGUAGE": self.language.text().strip(),
             "NOTER_AUTO_SUMMARIZE": "true" if self.auto.isChecked() else "false",
             "NOTER_AUTO_TASKS": "true" if self.auto_tasks.isChecked() else "false",
+            "NOTER_THEME": self.appearance.currentData(),
         }
 
     def save(self) -> None:

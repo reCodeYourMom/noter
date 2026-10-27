@@ -95,7 +95,6 @@ class NavRail(QWidget):
         self.setFixedWidth(224)
         self._items: list[NavItem] = []
         self._current = NavKey("all")
-        t = theme.current()
 
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
@@ -139,7 +138,7 @@ class NavRail(QWidget):
         self.record_btn.clicked.connect(self.record_requested.emit)
         self.import_btn = QToolButton()
         self.import_btn.setObjectName("iconBtn")
-        self.import_btn.setIcon(icons.icon("import", t.ink_2, 16))
+        icons.bind(self.import_btn, "import", "ink_2", 16)
         self.import_btn.setToolTip("Importer un fichier audio (⌘I)")
         self.import_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.import_btn.clicked.connect(self.import_requested.emit)
@@ -182,7 +181,7 @@ class NavRail(QWidget):
         settings = QToolButton()
         settings.setObjectName("nav")
         settings.setText("  Réglages")
-        settings.setIcon(icons.icon("settings", t.ink_3, 16))
+        icons.bind(settings, "settings", "ink_3", 16)
         settings.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         settings.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         settings.setCursor(Qt.CursorShape.PointingHandCursor)
