@@ -69,7 +69,7 @@ def test_window_lists_and_shows_detail(qapp, window):
     assert len(checkboxes) == 1
     # Rail : projet et tag présents avec compteurs
     labels = [it.lab.text() for it in w.rail._items]
-    assert "ACME" in labels and "#client" in labels and "Tous" in labels
+    assert "ACME" in labels and "#client" in labels and "Tous les calls" in labels
 
 
 def test_edit_metadata_from_detail(qapp, window, service):
@@ -235,7 +235,7 @@ def test_board_in_rail_and_view(qapp, board_window, service):
     assert w.workspace.currentWidget() is w.board_view
     assert w.board_view.title_edit.text() == "Sprint"
     labels = [it.lab.text() for it in w.rail._items]
-    assert "Sprint" in labels and "Tous" in labels
+    assert "Sprint" in labels and "Tous les calls" in labels
     assert [c.list.name for c in w.board_view.strip.columns] == ["À faire", "En cours", "Terminé"]
     assert [t.card.title for t in w.board_view.strip.columns[0].tiles()] == ["alpha", "bravo", "charlie"]
     # De retour dans la bibliothèque : la liste d'enregistrements revient

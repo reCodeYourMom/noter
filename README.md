@@ -42,14 +42,19 @@ noter doctor
 
 `noter app install` crée `~/Applications/Noter.app` (icône, nom « Noter » dans le Dock et la barre de menu). `install.sh` le fait pour toi. L'app vit ensuite dans la barre de menu : fermer la fenêtre ne la quitte pas.
 
-- **Rail de navigation** : tous, en cours, échecs, puis projets et tags avec compteurs ; état du traitement en bas.
+- **Rail de navigation** : le bouton **Enregistrer** (toujours visible, y compris dans les boards) et l'import, puis la bibliothèque (tous les calls, en cours, échecs), les boards de tâches, les projets et les tags avec compteurs ; état du traitement en bas.
 - **Liste** groupée par jour (aujourd'hui, hier, cette semaine…), un glyphe d'état par ligne (prêt, en cours animé, à traiter, échec), durée, projet et tags.
 - **Fiche d'un enregistrement** : titre, projet, tags et notes modifiables en place. En tête, la **timeline audio** : onde du call, couloir des speakers en couleurs, tête de lecture ; clic pour se déplacer. Dessous, deux colonnes : la synthèse (en bref, points clés, décisions, actions cochables avec responsable et échéance) et le transcript horodaté avec avatars des speakers, synchronisé à la lecture (double-clic pour écouter un passage, clic droit pour renommer un speaker).
 - **Console d'enregistrement** : voyant, compteur, titre, vumètres micro et système, bouton Arrêter.
 - **Tâches** : des boards façon Trello, directement dans l'app (voir ci-dessous).
 - **Recherche** plein texte dans transcripts, résumés et titres ; un résultat ouvre la fiche au bon passage, les occurrences sont marquées sur la timeline.
 - **Import** par bouton ou glisser-déposer. **Réglages** (clé API, modèles, langue) dans `~/Noter/.env`.
-- Thème clair ou sombre selon le système, typographie IBM Plex (sans et mono), une seule couleur d'accent : le rouge du REC.
+- Thème clair ou sombre selon le système, typographie IBM Plex (sans et mono) et **trois couleurs**, chacune avec un rôle :
+  - **iris** (violet) : la marque, les actions, la sélection, les traitements en cours ;
+  - **corail** : le REC, les retards, les erreurs ;
+  - **menthe** : ce qui est prêt ou terminé.
+
+  Ensemble, elles forment le dégradé « aurora » (menthe → iris → corail) de l'icône, du bouton Enregistrer, des ondes et des vumètres. Les tokens sont dans `src/noter/ui/theme.py` ; l'icône se régénère avec `python scripts/make_icon.py`.
 
 ### Tâches (boards)
 
@@ -57,7 +62,7 @@ Section **Tâches** du rail : un item par board, `+` pour en créer un (il déma
 
 - **Listes** côte à côte, qui défilent horizontalement. Clic sur le titre pour renommer, glisser le titre pour réordonner, menu `…` pour déplacer ou supprimer la liste. « Ajouter une liste » en bout de rangée.
 - **Cartes** : « Ajouter une carte » en bas de chaque liste (`Entrée` valide et reste ouvert pour enchaîner, `Maj+Entrée` = saut de ligne, `Échap` annule). On les **glisse-dépose** d'une liste à l'autre ou dans la même liste ; un cadre pointillé montre où elle atterrit, et le board défile tout seul quand on longe un bord.
-- **Fiche d'une carte** (clic) : titre, **étiquettes** colorées, **échéance** (en retard = rouge, imminente = ambre, terminée = vert), description, **checklist** avec progression, déplacement vers une autre liste, suppression. Tout s'enregistre au fil de l'eau.
+- **Fiche d'une carte** (clic) : titre, **étiquettes** colorées, **échéance** (en retard = corail, imminente = iris, terminée = menthe) ; chaque liste prend à tour de rôle une des trois couleurs, description, **checklist** avec progression, déplacement vers une autre liste, suppression. Tout s'enregistre au fil de l'eau.
 - **Filtre** en haut du board : titre, description ou nom d'étiquette (`⌘F`).
 - **Lien avec les enregistrements** : dans le compte-rendu, chaque action a un bouton *Ajouter aux tâches* qui crée une carte (responsable et échéance reprises, lien vers l'enregistrement). Le bouton devient une coche qui ouvre la carte, et la carte ouvre l'enregistrement d'origine. Les boards vivent dans `~/Noter/noter.db`.
 

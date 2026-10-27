@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMainWindow,
     QMessageBox,
-    QPushButton,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -82,6 +81,9 @@ class MainWindow(QMainWindow):
         self.rail.selected.connect(self._on_nav)
         self.rail.settings_requested.connect(self._open_settings)
         self.rail.board_add_requested.connect(self._new_board)
+        self.rail.record_requested.connect(lambda: self.bridge.start_recording(True))
+        self.rail.import_requested.connect(self._import_dialog)
+        self.btn_record = self.rail.record_btn
         root.addWidget(self.rail)
 
         # Deux pages : bibliothèque d'enregistrements (liste + fiche) ou board de tâches
@@ -105,23 +107,24 @@ class MainWindow(QMainWindow):
         ll = QVBoxLayout(listcol)
         ll.setContentsMargins(0, 0, 0, 0)
         ll.setSpacing(0)
-        top = QHBoxLayout()
-        top.setContentsMargins(14, 14, 14, 10)
-        top.setSpacing(8)
+        # En-tête : nom de la vue courante, compteur, recherche
+        top = QVBoxLayout()
+        top.setContentsMargins(18, 34, 18, 12)
+        top.setSpacing(2)
+        self.page_title = QLabel("Tous les calls")
+        self.page_title.setObjectName("pageTitle")
+        self.page_sub = QLabel("")
+        self.page_sub.setObjectName("meta")
+        top.addWidget(self.page_title)
+        top.addWidget(self.page_sub)
+        top.addSpacing(12)
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Rechercher    ⌘F")
+        self.search.setPlaceholderText("Rechercher dans les calls    ⌘F")
         self.search.setClearButtonEnabled(True)
         self.search.addAction(icons.icon("search", t.ink_3, 14), QLineEdit.ActionPosition.LeadingPosition)
         self.search.textChanged.connect(self._on_search_text)
         self.search.returnPressed.connect(self._run_search)
-        self.btn_record = QPushButton("  Enregistrer")
-        self.btn_record.setObjectName("primary")
-        self.btn_record.setIcon(_rec_dot_icon(t))
-        self.btn_record.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_record.setToolTip("Micro + audio système (⌘R)")
-        self.btn_record.clicked.connect(lambda: self.bridge.start_recording(True))
-        top.addWidget(self.search, 1)
-        top.addWidget(self.btn_record)
+        top.addWidget(self.search)
         ll.addLayout(top)
 
         self.stack = QStackedWidget()
@@ -225,6 +228,7 @@ class MainWindow(QMainWindow):
         self.rail.populate(counts, sorted(proj.items()), sorted(tags.items()), boards)
 
         self.list_model.refresh()
+        self._update_page_title()
         searching = bool(self.search.text().strip())
         if not searching:
             if self.list_model.recording_count() == 0:
@@ -245,6 +249,15 @@ class MainWindow(QMainWindow):
             if self.main_stack.currentWidget() is self.detail:
                 self.detail.refresh_if(current)
         self._refresh_status()
+
+    def _update_page_title(self) -> None:
+        f = self.list_model.filter
+        title = {"all": "Tous les calls", "active": "En cours", "failed": "Échecs"}.get(f.kind)
+        if title is None:
+            title = f"#{f.value}" if f.kind == "tag" else (f.value or "")
+        self.page_title.setText(title)
+        n = self.list_model.recording_count()
+        self.page_sub.setText("Aucun enregistrement" if n == 0 else f"{n} enregistrement{'s' if n > 1 else ''}")
 
     def _refresh_status(self) -> None:
         pending = self.repo.pending_job_count()
@@ -423,26 +436,6 @@ class MainWindow(QMainWindow):
     def closeEvent(self, e: QCloseEvent) -> None:  # noqa: N802
         e.ignore()
         self.hide()
-
-
-def _rec_dot_icon(t):
-    from PySide6.QtCore import QRectF
-    from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
-
-    ic = QIcon()
-    for scale in (1, 2):
-        px = 10 * scale
-        pm = QPixmap(px, px)
-        pm.fill(Qt.GlobalColor.transparent)
-        p = QPainter(pm)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(t.rec))
-        p.drawEllipse(QRectF(1 * scale, 1 * scale, 8 * scale, 8 * scale))
-        p.end()
-        pm.setDevicePixelRatio(scale)
-        ic.addPixmap(pm)
-    return ic
 
 
 def _hit_item(h: SearchHit) -> QListWidgetItem:

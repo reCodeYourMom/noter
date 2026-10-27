@@ -1,4 +1,4 @@
-"""Génère l'icône de l'app : squircle graphite, onde claire, un point rouge (REC).
+"""Génère l'icône de l'app : squircle indigo, onde en dégradé aurora (menthe → iris → corail), point REC corail.
 
     python scripts/make_icon.py
 → src/noter/ui/assets/AppIcon.png (1024), AppIcon.icns, icon.png (512, README)
@@ -13,10 +13,18 @@ from PIL import Image, ImageDraw, ImageFilter
 OUT = Path(__file__).resolve().parents[1] / "src" / "noter" / "ui" / "assets"
 ROOT = Path(__file__).resolve().parents[1]
 
-GRAPHITE_TOP = (44, 46, 50)
-GRAPHITE_BOT = (22, 23, 26)
-WAVE = (236, 237, 238)
-REC = (229, 72, 77)
+INDIGO_TOP = (46, 38, 98)
+INDIGO_BOT = (18, 16, 38)
+AURORA = [(61, 219, 168), (140, 128, 255), (255, 122, 110)]  # menthe, iris, corail (thème sombre)
+REC = (255, 107, 94)
+
+
+def aurora(frac: float) -> tuple[int, int, int]:
+    """Couleur du dégradé aurora à la position `frac` (0..1)."""
+    seg = min(1, int(frac * 2))
+    k = frac * 2 - seg
+    a, b = AURORA[seg], AURORA[seg + 1]
+    return tuple(int(a[i] + (b[i] - a[i]) * k) for i in range(3))
 
 
 def squircle_mask(size: int, radius_frac: float = 0.225) -> Image.Image:
@@ -44,9 +52,9 @@ def make(size: int = 1024) -> Image.Image:
     grad = Image.new("RGBA", (inner, inner))
     gp = grad.load()
     for y in range(inner):
-        t = y / (inner - 1)
-        c = tuple(int(GRAPHITE_TOP[i] * (1 - t) + GRAPHITE_BOT[i] * t) for i in range(3))
         for x in range(inner):
+            t = (0.65 * y + 0.35 * x) / (inner - 1)  # dégradé légèrement diagonal
+            c = tuple(int(INDIGO_TOP[i] * (1 - t) + INDIGO_BOT[i] * t) for i in range(3))
             gp[x, y] = (*c, 255)
     body.paste(grad, (0, 0), squircle_mask(inner))
 
@@ -62,7 +70,7 @@ def make(size: int = 1024) -> Image.Image:
     for i, h in enumerate(heights):
         bh = inner * 0.58 * h
         x = x0 + i * (bw + gap)
-        d.rounded_rectangle([x, cy - bh / 2, x + bw, cy + bh / 2], radius=bw / 2, fill=WAVE)
+        d.rounded_rectangle([x, cy - bh / 2, x + bw, cy + bh / 2], radius=bw / 2, fill=aurora(i / (bars - 1)))
     # Point REC, en haut à droite, avec halo doux
     dot_r = inner * 0.052
     cx, cyd = inner * 0.80, inner * 0.21

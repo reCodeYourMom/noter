@@ -49,15 +49,21 @@ def due_text(d: date, today: date | None = None) -> str:
 
 
 def due_colors(card: Card, t: Tokens, today: date | None = None) -> tuple[str, str | None]:
-    """(texte, fond) de la pastille d'échéance : terminée = vert, en retard = rouge, imminente = ambre."""
+    """(texte, fond) de la pastille d'échéance : terminée = menthe, en retard = corail, imminente = iris."""
     today = today or date.today()
     if card.done:
         return "#FFFFFF", t.ok
     if card.due and card.due < today:
         return "#FFFFFF", t.rec
     if card.due and card.due <= today + timedelta(days=1):
-        return "#FFFFFF", t.busy
+        return "#FFFFFF", t.accent
     return t.ink_3, None
+
+
+def list_color(position: int) -> str:
+    """Chaque liste reçoit une des trois couleurs, à tour de rôle : iris, corail, menthe."""
+    t = theme.current()
+    return (t.accent, t.rec, t.ok)[position % 3]
 
 
 def _tilted_pixmap(pm: QPixmap, degrees: float = 3.0, margin: int = 14) -> QPixmap:
@@ -136,7 +142,7 @@ class CardTile(QFrame):
             row.setSpacing(4)
             for key in card.labels:
                 chip = QFrame()
-                chip.setFixedSize(34, 8)
+                chip.setFixedSize(36, 8)
                 chip.setStyleSheet(f"background: {t.labels[key]}; border-radius: 4px;")
                 chip.setToolTip(LABEL_NAMES_FR[key])
                 row.addWidget(chip)
@@ -263,7 +269,7 @@ class _AddRow(QWidget):
         self.button = QToolButton()
         self.button.setObjectName("addCard")
         self.button.setText(" " + button_text)
-        self.button.setIcon(icons.icon("plus", t.ink_2, 14))
+        self.button.setIcon(icons.icon("plus", t.ink_3, 14))
         self.button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -401,7 +407,10 @@ class ListColumn(QFrame):
 
         head = QHBoxLayout()
         head.setContentsMargins(0, 0, 0, 0)
-        head.setSpacing(4)
+        head.setSpacing(6)
+        self.dot = QLabel()
+        self.dot.setFixedSize(10, 10)
+        head.addWidget(self.dot)
         self.title = _ListTitle()
         self.title.edit_requested.connect(self._begin_rename)
         self.title.drag_requested.connect(self._start_drag)
@@ -457,7 +466,9 @@ class ListColumn(QFrame):
             tile.drag_finished.connect(self.drag_finished)
             self.cards_lay.addWidget(tile)
         self.title.setText(lst.name)
-        self.count.setText(str(len(cards)) if cards else "")
+        self.count.setText(str(len(cards)))
+        self.count.setVisible(bool(cards))
+        self.dot.setStyleSheet(f"background: {list_color(lst.position)}; border-radius: 5px;")
         self.apply_filter(self._filter)
         self._refit()
         QTimer.singleShot(0, self._refit)  # une fois les cartes stylées, leur hauteur réelle est connue

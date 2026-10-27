@@ -209,7 +209,7 @@ class RecordingDetail(QWidget):
         self.summary_lay.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.summary_area.setWidget(self.summary_box)
         self.summary_area.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        body.addWidget(self.summary_area, 5)
+        body.addWidget(self.summary_area, 6)
         body.addWidget(vline())
 
         right = QWidget()
@@ -217,7 +217,7 @@ class RecordingDetail(QWidget):
         rl.setContentsMargins(24, 18, 20, 12)
         rl.setSpacing(10)
         tr_head = QHBoxLayout()
-        tr_head.addWidget(section_label("Transcript"))
+        tr_head.addWidget(section_label("Transcript", theme.current().accent))
         tr_head.addStretch()
         self.follow = QCheckBox("Suivre la lecture")
         self.follow.setObjectName("follow")
@@ -239,7 +239,7 @@ class RecordingDetail(QWidget):
         self.notes.setFixedHeight(72)
         self.notes.textChanged.connect(self._notes_dirty)
         rl.addWidget(self.notes)
-        body.addWidget(right, 6)
+        body.addWidget(right, 5)
         root.addLayout(body, 1)
 
         self.setEnabled(False)
@@ -367,26 +367,37 @@ class RecordingDetail(QWidget):
                 RecordingStatus.SUMMARIZING: "Résumé en cours…",
                 RecordingStatus.FAILED: "Pas de résumé : le traitement a échoué.",
             }.get(rec.status if rec else RecordingStatus.RECORDED, "Pas encore de résumé.")
-            self.summary_lay.addWidget(section_label("En bref"))
+            self.summary_lay.addWidget(section_label("En bref", t.accent))
             lab = QLabel(msg)
             lab.setObjectName("empty")
             self.summary_lay.addWidget(lab)
             return
 
-        self.summary_lay.addWidget(section_label("En bref"))
+        self.summary_lay.addWidget(section_label("En bref", t.accent))
+        # Le fond et les marges sont portés par un cadre : un QLabel qui passe à la ligne calcule mal
+        # sa hauteur quand la feuille de style lui ajoute du padding.
+        card = QFrame()
+        card.setObjectName("tldrCard")
+        cl = QVBoxLayout(card)
+        cl.setContentsMargins(16, 12, 16, 13)
         tldr = QLabel(summary.tldr)
         tldr.setObjectName("tldr")
         tldr.setWordWrap(True)
         tldr.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.summary_lay.addWidget(tldr)
+        cl.addWidget(tldr)
+        self.summary_lay.addWidget(card)
 
-        for title, items, bullet in (("Points clés", summary.key_points, "•"), ("Décisions", summary.decisions, "▸")):
+        sections = (
+            ("Points clés", summary.key_points, "●", t.accent),
+            ("Décisions", summary.decisions, "◆", t.ok),
+        )
+        for title, items, bullet, color in sections:
             if not items:
                 continue
             self.summary_lay.addSpacing(12)
-            self.summary_lay.addWidget(section_label(title))
+            self.summary_lay.addWidget(section_label(title, color))
             for it in items:
-                lab = QLabel(f'<span style="color:{t.ink_4}">{bullet}</span>&nbsp;&nbsp;{_esc(it)}')
+                lab = QLabel(f'<span style="color:{color}">{bullet}</span>&nbsp;&nbsp;{_esc(it)}')
                 lab.setObjectName("point")
                 lab.setWordWrap(True)
                 lab.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -394,7 +405,7 @@ class RecordingDetail(QWidget):
 
         if summary.actions:
             self.summary_lay.addSpacing(12)
-            self.summary_lay.addWidget(section_label("Actions"))
+            self.summary_lay.addWidget(section_label("Actions", t.rec))
             cards = {c.title: c for c in self.repo.cards_for_recording(summary.recording_id)}
             for i, a in enumerate(summary.actions):
                 cb = QCheckBox()

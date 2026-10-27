@@ -3,7 +3,16 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QGraphicsDropShadowEffect,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from noter.models import Recording
 from noter.ui import icons, theme
@@ -33,7 +42,7 @@ class RecordingConsole(QWidget):
         lamp_row.setSpacing(10)
         lamp_row.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self.lamp = QLabel()
-        self.lamp.setFixedSize(12, 12)
+        self.lamp.setFixedSize(20, 20)
         self.lamp_text = QLabel("ENREGISTREMENT")
         self.lamp_text.setObjectName("lamp")
         lamp_row.addWidget(self.lamp)
@@ -101,6 +110,11 @@ class RecordingConsole(QWidget):
         self.stop.setIcon(icons.icon("stop", "#FFFFFF", 12))
         self.stop.setCursor(Qt.CursorShape.PointingHandCursor)
         self.stop.clicked.connect(self.stop_requested.emit)
+        glow = QGraphicsDropShadowEffect(self.stop)  # halo corail : le seul bouton qui compte pendant un call
+        glow.setBlurRadius(28)
+        glow.setOffset(0, 6)
+        glow.setColor(theme.soft(t.rec, 0.45))
+        self.stop.setGraphicsEffect(glow)
         root.addWidget(self.stop, 0, Qt.AlignmentFlag.AlignHCenter)
         root.addSpacing(14)
 
@@ -115,7 +129,6 @@ class RecordingConsole(QWidget):
         self._blink.timeout.connect(self._toggle_lamp)
         self._lamp_on = True
         self._set_lamp(True)
-        _ = t
 
     def _meter_label(self, text: str) -> QLabel:
         lab = QLabel(text)
@@ -129,7 +142,8 @@ class RecordingConsole(QWidget):
 
     def _set_lamp(self, on: bool) -> None:
         t = theme.current()
-        self.lamp.setStyleSheet(f"background: {t.rec if on else t.rec_soft}; border-radius: 6px;")
+        halo = t.rec_soft if on else "transparent"
+        self.lamp.setStyleSheet(f"background: {t.rec if on else t.rec_soft}; border: 4px solid {halo}; border-radius: 10px;")
 
     def _toggle_lamp(self) -> None:
         self._lamp_on = not self._lamp_on

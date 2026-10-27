@@ -75,7 +75,7 @@ class CardDialog(QDialog):
         main.addWidget(self.where)
 
         main.addSpacing(8)
-        main.addWidget(section_label("Étiquettes"))
+        main.addWidget(section_label("Étiquettes", t.accent))
         row = QHBoxLayout()
         row.setSpacing(6)
         self.label_buttons: dict[str, QToolButton] = {}
@@ -85,9 +85,11 @@ class CardDialog(QDialog):
             b.setCheckable(True)
             b.setToolTip(LABEL_NAMES_FR[key])
             b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.setText(LABEL_NAMES_FR[key])
             b.setStyleSheet(
-                f"QToolButton#labelPick {{ background: {t.labels[key]}; }}"
-                f"QToolButton#labelPick:checked {{ border: 2px solid {t.ink}; }}"
+                f"QToolButton#labelPick {{ background: {theme.rgba(t.labels[key], 0.18)}; color: {t.ink_2}; font-size: 12px; }}"
+                f"QToolButton#labelPick:hover {{ border: 2px solid {t.labels[key]}; }}"
+                f"QToolButton#labelPick:checked {{ background: {t.labels[key]}; color: white; font-weight: 600; }}"
             )
             b.toggled.connect(self._save_labels)
             self.label_buttons[key] = b
@@ -96,7 +98,7 @@ class CardDialog(QDialog):
         main.addLayout(row)
 
         main.addSpacing(8)
-        main.addWidget(section_label("Échéance"))
+        main.addWidget(section_label("Échéance", t.rec))
         row = QHBoxLayout()
         row.setSpacing(10)
         self.has_due = QCheckBox("Date limite")
@@ -115,7 +117,7 @@ class CardDialog(QDialog):
         main.addLayout(row)
 
         main.addSpacing(8)
-        main.addWidget(section_label("Description"))
+        main.addWidget(section_label("Description", t.accent))
         self.desc = QPlainTextEdit()
         self.desc.setPlaceholderText("Ajoute une description plus détaillée…")
         self.desc.setMinimumHeight(110)
@@ -124,7 +126,7 @@ class CardDialog(QDialog):
 
         main.addSpacing(8)
         head = QHBoxLayout()
-        head.addWidget(section_label("Checklist"))
+        head.addWidget(section_label("Checklist", t.ok))
         self.progress_text = QLabel("")
         self.progress_text.setObjectName("meta")
         head.addStretch()
@@ -163,7 +165,8 @@ class CardDialog(QDialog):
         side.addWidget(self.rec_btn)
         side.addStretch(1)
         delete = QPushButton("  Supprimer la carte")
-        delete.setIcon(icons.icon("trash", t.rec, 14))
+        delete.setObjectName("danger")
+        delete.setIcon(icons.icon("trash", t.rec_ink, 14))
         delete.setCursor(Qt.CursorShape.PointingHandCursor)
         delete.clicked.connect(self._delete)
         close = QPushButton("Fermer")

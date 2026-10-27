@@ -86,15 +86,15 @@ class TranscriptDelegate(QStyledItemDelegate):
         hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
         if is_current or hovered:
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(qcolor(t.rec_soft if is_current else t.sel))
-            p.drawRoundedRect(inner, 6, 6)
+            p.setBrush(qcolor(t.accent_soft if is_current else t.sel))
+            p.drawRoundedRect(inner, 10, 10)
 
         x = inner.left() + self.PAD_H
         y = inner.top() + self.PAD_V
         mono = QFont(MONO)
         mono.setPixelSize(11)
         p.setFont(mono)
-        p.setPen(qcolor(t.rec if is_current else t.ink_4))
+        p.setPen(qcolor(t.accent_ink if is_current else t.ink_4))
         p.drawText(QRect(x, y + 1, self.TC_W, 16), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, format_timestamp(s.start))
         x += self.TC_W + self.GAP
         paint_avatar(p, QRectF(x, y, self.AV, self.AV), s.speaker, t)

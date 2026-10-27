@@ -7,13 +7,13 @@ from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from noter.models import RecordingStatus
 
 STATUS_COLOR = {
-    RecordingStatus.RECORDING: "#e5484d",
-    RecordingStatus.RECORDED: "#8d8d8d",
-    RecordingStatus.TRANSCRIBING: "#3b82f6",
-    RecordingStatus.TRANSCRIBED: "#3b82f6",
-    RecordingStatus.SUMMARIZING: "#3b82f6",
-    RecordingStatus.DONE: "#22a06b",
-    RecordingStatus.FAILED: "#e5484d",
+    RecordingStatus.RECORDING: "#FF6B5E",
+    RecordingStatus.RECORDED: "#B9B7CC",
+    RecordingStatus.TRANSCRIBING: "#6D5EF5",
+    RecordingStatus.TRANSCRIBED: "#6D5EF5",
+    RecordingStatus.SUMMARIZING: "#6D5EF5",
+    RecordingStatus.DONE: "#1FBF8F",
+    RecordingStatus.FAILED: "#FF6B5E",
 }
 
 STATUS_LABEL = {
@@ -26,15 +26,15 @@ STATUS_LABEL = {
     RecordingStatus.FAILED: "Échec",
 }
 
-ACCENT = "#e5484d"
+ACCENT = "#FF6B5E"  # corail : le voyant REC de la barre de menu
 
 QSS = """
 QLabel#title { font-size: 20px; font-weight: 600; }
 QLabel#meta { color: palette(mid); }
 QLabel#section { font-size: 12px; font-weight: 600; color: palette(mid); letter-spacing: 1px; margin-top: 8px; }
-QLabel#tldr { font-size: 14px; padding: 10px 12px; border-left: 3px solid #e5484d; background: palette(alternate-base); border-radius: 4px; }
+QLabel#tldr { font-size: 14px; padding: 10px 12px; border-left: 3px solid #6D5EF5; background: palette(alternate-base); border-radius: 4px; }
 QLabel#empty { color: palette(mid); font-size: 14px; }
-QFrame#recbar { background: #e5484d; border-radius: 6px; }
+QFrame#recbar { background: #FF6B5E; border-radius: 6px; }
 QFrame#recbar QLabel { color: white; font-weight: 600; }
 QFrame#recbar QPushButton { color: white; background: rgba(0,0,0,0.25); border: none; padding: 4px 12px; border-radius: 4px; }
 QFrame#recbar QPushButton:hover { background: rgba(0,0,0,0.4); }

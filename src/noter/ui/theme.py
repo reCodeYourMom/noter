@@ -1,7 +1,11 @@
-"""Design tokens → palette Qt + feuille de style. Deux thèmes, un seul accent (le voyant REC)."""
+"""Design tokens → palette Qt + feuille de style.
+
+Deux thèmes (clair, sombre) et trois couleurs : iris, corail, menthe, réunies dans un dégradé « aurora ».
+"""
 from __future__ import annotations
 
 import logging
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,11 +32,20 @@ class Tokens:
     ink_4: str       # désactivé / traits
     line: str        # bordure standard (rgba)
     line_2: str      # bordure emphase (rgba)
-    sel: str         # survol / sélection (rgba)
-    rec: str         # accent : REC et échec
+    sel: str         # survol (rgba, légèrement teinté iris)
+    # Les trois couleurs : iris (marque, actions, sélection, traitement), corail (REC, retard, erreur),
+    # menthe (terminé, réussi). Chacune existe en aplat, en texte lisible (`*_ink`) et en fond doux.
+    accent: str
+    accent_hover: str
+    accent_ink: str
+    accent_soft: str
+    rec: str
+    rec_ink: str
     rec_soft: str
     ok: str
-    busy: str
+    ok_ink: str
+    ok_soft: str
+    busy: str        # traitement en cours = iris
     busy_soft: str
     speakers: tuple[str, ...]
     is_dark: bool
@@ -44,31 +57,90 @@ class Tokens:
 
 LIGHT = Tokens(
     name="light",
-    canvas="#F3F3F1", panel="#FFFFFF", panel_2="#F8F8F6", inset="#EDEDEA",
-    ink="#17191B", ink_2="#4B5057", ink_3="#7B818A", ink_4="#B0B5BC",
-    line="rgba(23,25,27,0.08)", line_2="rgba(23,25,27,0.14)", sel="rgba(23,25,27,0.06)",
-    rec="#E5484D", rec_soft="rgba(229,72,77,0.12)",
-    ok="#2D9A68", busy="#D08A1E", busy_soft="rgba(208,138,30,0.14)",
-    speakers=("#4E6FB3", "#5A9A6F", "#9A5AA0", "#C27A4C", "#3F8F9E", "#A6703A"),
+    canvas="#F4F3FA", panel="#FFFFFF", panel_2="#F8F7FD", inset="#EEEDF6",
+    ink="#1A1830", ink_2="#4A4862", ink_3="#7D7A96", ink_4="#B9B7CC",
+    line="rgba(26,24,48,0.07)", line_2="rgba(26,24,48,0.13)", sel="rgba(109,94,245,0.07)",
+    accent="#6D5EF5", accent_hover="#5B4BE8", accent_ink="#5847E0", accent_soft="rgba(109,94,245,0.12)",
+    rec="#FF6B5E", rec_ink="#DE4636", rec_soft="rgba(255,107,94,0.14)",
+    ok="#1FBF8F", ok_ink="#0B8763", ok_soft="rgba(31,191,143,0.15)",
+    busy="#6D5EF5", busy_soft="rgba(109,94,245,0.12)",
+    speakers=("#6D5EF5", "#FF6B5E", "#1FBF8F", "#3D9BF0", "#F0A12B", "#DD5AAE"),
     is_dark=False,
-    list_bg="#EBEBE8", card_bg="#FFFFFF", card_hover="#F8F8F6",
-    labels={"green": "#4FAE6A", "yellow": "#E2B203", "orange": "#E8802A", "red": "#E5484D", "purple": "#9F6FD0", "blue": "#3B7DD8"},
+    list_bg="#ECEBF5", card_bg="#FFFFFF", card_hover="#FBFAFF",
+    labels={"green": "#1FBF8F", "yellow": "#F5BE3D", "orange": "#FF9457", "red": "#FF6B5E", "purple": "#6D5EF5", "blue": "#3D9BF0"},
 )
 
 DARK = Tokens(
     name="dark",
-    canvas="#131415", panel="#1B1C1E", panel_2="#202224", inset="#17181A",
-    ink="#ECEDEE", ink_2="#B4B8BD", ink_3="#7F858C", ink_4="#4E535A",
-    line="rgba(255,255,255,0.07)", line_2="rgba(255,255,255,0.12)", sel="rgba(255,255,255,0.07)",
-    rec="#F0575C", rec_soft="rgba(240,87,92,0.16)",
-    ok="#4CB381", busy="#E0A043", busy_soft="rgba(224,160,67,0.16)",
-    speakers=("#7D9BE0", "#7FC296", "#C48BCB", "#E0A078", "#6FBFCF", "#D4A06A"),
+    canvas="#121120", panel="#191828", panel_2="#1F1E31", inset="#15141F",
+    ink="#EEEDF7", ink_2="#B9B7CC", ink_3="#8784A0", ink_4="#514E68",
+    line="rgba(255,255,255,0.06)", line_2="rgba(255,255,255,0.11)", sel="rgba(140,128,255,0.10)",
+    accent="#8C80FF", accent_hover="#9D93FF", accent_ink="#ABA2FF", accent_soft="rgba(140,128,255,0.18)",
+    rec="#FF7A6E", rec_ink="#FF9086", rec_soft="rgba(255,122,110,0.18)",
+    ok="#3DDBA8", ok_ink="#56E4B7", ok_soft="rgba(61,219,168,0.16)",
+    busy="#8C80FF", busy_soft="rgba(140,128,255,0.18)",
+    speakers=("#8C80FF", "#FF7A6E", "#3DDBA8", "#6CB8FF", "#FFB547", "#F07CC8"),
     is_dark=True,
-    list_bg="#1B1C1E", card_bg="#26282B", card_hover="#2D3033",
-    labels={"green": "#5CBE78", "yellow": "#E5C13A", "orange": "#EE9A52", "red": "#F0575C", "purple": "#B48AE0", "blue": "#6AA0EC"},
+    list_bg="#1A1929", card_bg="#24233A", card_hover="#2A2944",
+    labels={"green": "#3DDBA8", "yellow": "#FFC75A", "orange": "#FFA06B", "red": "#FF7A6E", "purple": "#8C80FF", "blue": "#6CB8FF"},
 )
 
 _current: Tokens = LIGHT
+
+
+def aurora_stops(t: Tokens) -> list[tuple[float, str]]:
+    """Le dégradé signature : menthe → iris → corail."""
+    return [(0.0, t.ok), (0.5, t.accent), (1.0, t.rec)]
+
+
+def qss_gradient(stops: list[tuple[float, str]], x2: float = 1, y2: float = 0) -> str:
+    inner = ", ".join(f"stop:{pos} {color}" for pos, color in stops)
+    return f"qlineargradient(x1:0, y1:0, x2:{x2}, y2:{y2}, {inner})"
+
+
+def cta_gradient(t: Tokens) -> str:
+    """Bouton Enregistrer : corail → iris."""
+    return qss_gradient([(0.0, t.rec), (1.0, t.accent)])
+
+
+def soft(color: str | QColor, alpha: float) -> QColor:
+    c = QColor(color) if isinstance(color, str) else QColor(color)
+    c.setAlphaF(alpha)
+    return c
+
+
+def rgba(color: str, alpha: float) -> str:
+    """Couleur hexadécimale → `rgba(...)` pour la feuille de style."""
+    c = QColor(color)
+    return f"rgba({c.red()},{c.green()},{c.blue()},{alpha})"
+
+
+def gradient_color(t: Tokens, frac: float) -> QColor:
+    """Couleur du dégradé aurora à la position `frac` (0..1), pour le dessin au QPainter."""
+    stops = aurora_stops(t)
+    frac = max(0.0, min(1.0, frac))
+    for (p0, c0), (p1, c1) in zip(stops, stops[1:], strict=False):
+        if frac <= p1:
+            k = (frac - p0) / (p1 - p0) if p1 > p0 else 0.0
+            a, b = QColor(c0), QColor(c1)
+            return QColor(
+                round(a.red() + (b.red() - a.red()) * k),
+                round(a.green() + (b.green() - a.green()) * k),
+                round(a.blue() + (b.blue() - a.blue()) * k),
+            )
+    return QColor(stops[-1][1])
+
+
+def _asset(name: str, color: str, stroke: float = 1.75) -> str:
+    """Icône SVG écrite dans un cache, pour les `image: url(...)` de la feuille de style."""
+    from noter.ui import icons
+
+    folder = Path(tempfile.gettempdir()) / "noter-ui"
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / f"{name}-{color.lstrip('#')}-{stroke}.svg"
+    if not path.exists():
+        path.write_bytes(icons.svg(name, color, stroke=stroke))
+    return path.as_posix()
 
 
 def current() -> Tokens:
@@ -130,8 +202,9 @@ def build_palette(t: Tokens) -> QPalette:
         p.setColor(group, QPalette.ColorRole.ButtonText, qcolor(t.ink))
         p.setColor(group, QPalette.ColorRole.Button, qcolor(t.panel_2))
         p.setColor(group, QPalette.ColorRole.PlaceholderText, qcolor(t.ink_4))
-        p.setColor(group, QPalette.ColorRole.Highlight, qcolor(t.ink))
-        p.setColor(group, QPalette.ColorRole.HighlightedText, qcolor(t.panel))
+        p.setColor(group, QPalette.ColorRole.Highlight, qcolor(t.accent))
+        p.setColor(group, QPalette.ColorRole.HighlightedText, QColor("#FFFFFF"))
+        p.setColor(group, QPalette.ColorRole.Link, qcolor(t.accent_ink))
         p.setColor(group, QPalette.ColorRole.ToolTipBase, qcolor(t.panel_2))
         p.setColor(group, QPalette.ColorRole.ToolTipText, qcolor(t.ink))
         p.setColor(group, QPalette.ColorRole.Mid, qcolor(t.ink_3))
@@ -141,22 +214,28 @@ def build_palette(t: Tokens) -> QPalette:
 
 
 def build_qss(t: Tokens) -> str:
+    check = _asset("check", "#FFFFFF", 3.0)
+    chevron = _asset("chevron", t.ink_3, 2.0)
+    cta = cta_gradient(t)
+    aurora = qss_gradient(aurora_stops(t))
     return f"""
 * {{ font-family: "{SANS}"; font-size: 13px; }}
 QMainWindow, QDialog {{ background: {t.canvas}; }}
 QWidget#panel {{ background: {t.panel}; }}
-QWidget#rail {{ background: {t.panel}; border-right: 1px solid {t.line}; }}
-QWidget#listcol {{ background: {t.panel}; border-right: 1px solid {t.line}; }}
-QToolTip {{ background: {t.panel_2}; color: {t.ink}; border: 1px solid {t.line_2}; padding: 4px 6px; }}
+QWidget#rail {{ background: {t.canvas}; }}
+QWidget#listcol {{ background: {t.panel}; border-left: 1px solid {t.line}; border-right: 1px solid {t.line}; }}
+QToolTip {{ background: {t.ink}; color: {t.panel}; border: none; border-radius: 6px; padding: 5px 8px; }}
 QScrollArea {{ background: transparent; border: none; }}
 QScrollArea > QWidget > QWidget {{ background: transparent; }}
 QAbstractScrollArea {{ background: transparent; border: none; }}
 QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
 QScrollBar::handle:vertical {{ background: {t.ink_4}; border-radius: 3px; min-height: 24px; }}
-QScrollBar::handle:vertical:hover {{ background: {t.ink_3}; }}
+QScrollBar::handle:vertical:hover {{ background: {t.accent}; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
 QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 2px; }}
 QScrollBar::handle:horizontal {{ background: {t.ink_4}; border-radius: 3px; min-width: 24px; }}
+QScrollBar::handle:horizontal:hover {{ background: {t.accent}; }}
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
 QSplitter::handle {{ background: transparent; }}
 
@@ -165,113 +244,131 @@ QLabel {{ color: {t.ink}; background: transparent; }}
 QLabel#ink2 {{ color: {t.ink_2}; }}
 QLabel#meta {{ color: {t.ink_3}; font-size: 12px; }}
 QLabel#metaMono {{ color: {t.ink_2}; font-family: "{MONO}"; font-size: 12px; }}
-QLabel#section {{ color: {t.ink_3}; font-size: 11px; font-weight: 500; letter-spacing: 1px; }}
+QLabel#section {{ color: {t.ink_3}; font-size: 11px; font-weight: 600; letter-spacing: 1px; }}
 QLabel#title {{ color: {t.ink}; font-size: 24px; font-weight: 600; letter-spacing: -0.5px; }}
-QLabel#tldr {{ color: {t.ink}; font-size: 15px; line-height: 150%; }}
+QLabel#pageTitle {{ color: {t.ink}; font-size: 20px; font-weight: 600; letter-spacing: -0.4px; }}
+QLabel#brand {{ color: {t.ink}; font-size: 15px; font-weight: 700; letter-spacing: -0.2px; }}
+QFrame#tldrCard {{ background: {t.accent_soft}; border-left: 3px solid {t.accent}; border-radius: 10px; }}
+QLabel#tldr {{ color: {t.ink}; font-size: 15px; background: transparent; }}
 QLabel#point {{ color: {t.ink_2}; }}
 QLabel#empty {{ color: {t.ink_3}; }}
-QLabel#emptyTitle {{ color: {t.ink}; font-size: 16px; font-weight: 600; }}
+QLabel#emptyTitle {{ color: {t.ink}; font-size: 19px; font-weight: 600; letter-spacing: -0.3px; }}
 QLabel#gen {{ color: {t.ink_4}; font-size: 11px; }}
-QLabel#lamp {{ color: {t.rec}; font-size: 12px; font-weight: 500; letter-spacing: 2px; }}
+QLabel#lamp {{ color: {t.rec_ink}; font-size: 12px; font-weight: 600; letter-spacing: 3px; }}
 QLabel#timecode {{ color: {t.ink}; font-family: "{MONO}"; font-size: 72px; font-weight: 500; letter-spacing: -2px; }}
-QLabel#error {{ color: {t.rec}; }}
-QLabel#groupHeader {{ color: {t.ink_3}; font-size: 11px; font-weight: 500; letter-spacing: 1px; }}
+QLabel#error {{ color: {t.rec_ink}; }}
+QLabel#groupHeader {{ color: {t.ink_3}; font-size: 11px; font-weight: 600; letter-spacing: 1px; }}
 
 /* Champs */
-QLineEdit {{ background: {t.inset}; color: {t.ink}; border: 1px solid transparent; border-radius: 7px; padding: 6px 10px; selection-background-color: {t.ink}; selection-color: {t.panel}; }}
-QLineEdit:focus {{ border: 1px solid {t.ink_3}; }}
-QLineEdit#titleEdit {{ background: transparent; border: none; border-bottom: 1px solid transparent; border-radius: 0; padding: 2px 0; font-size: 24px; font-weight: 600; letter-spacing: -0.5px; }}
-QLineEdit#titleEdit:hover {{ border-bottom: 1px solid {t.line_2}; }}
-QLineEdit#titleEdit:focus {{ border-bottom: 1px solid {t.ink}; }}
-QLineEdit#recTitle {{ background: transparent; border: none; border-bottom: 1px solid {t.line_2}; border-radius: 0; padding: 6px 2px; font-size: 16px; font-weight: 500; }}
-QLineEdit#recTitle:focus {{ border-bottom: 1px solid {t.ink}; }}
-QPlainTextEdit {{ background: {t.inset}; color: {t.ink}; border: 1px solid transparent; border-radius: 7px; padding: 8px; }}
-QPlainTextEdit:focus {{ border: 1px solid {t.ink_3}; }}
-QComboBox {{ background: {t.inset}; color: {t.ink}; border: 1px solid transparent; border-radius: 7px; padding: 5px 10px; }}
-QComboBox:focus {{ border: 1px solid {t.ink_3}; }}
-QComboBox::drop-down {{ border: none; width: 18px; }}
-QComboBox QAbstractItemView {{ background: {t.panel}; color: {t.ink}; border: 1px solid {t.line_2}; selection-background-color: {t.sel}; selection-color: {t.ink}; outline: 0; }}
+QLineEdit {{ background: {t.inset}; color: {t.ink}; border: 1.5px solid transparent; border-radius: 9px; padding: 6px 10px; selection-background-color: {t.accent}; selection-color: white; }}
+QLineEdit:hover {{ border: 1.5px solid {t.line_2}; }}
+QLineEdit:focus {{ background: {t.panel}; border: 1.5px solid {t.accent}; }}
+QLineEdit#titleEdit {{ background: transparent; border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 2px 0; font-size: 24px; font-weight: 600; letter-spacing: -0.5px; }}
+QLineEdit#titleEdit:hover {{ border-bottom: 2px solid {t.line_2}; }}
+QLineEdit#titleEdit:focus {{ border-bottom: 2px solid {t.accent}; }}
+QLineEdit#recTitle {{ background: transparent; border: none; border-bottom: 2px solid {t.line_2}; border-radius: 0; padding: 6px 2px; font-size: 16px; font-weight: 500; }}
+QLineEdit#recTitle:focus {{ border-bottom: 2px solid {t.rec}; }}
+QPlainTextEdit {{ background: {t.inset}; color: {t.ink}; border: 1.5px solid transparent; border-radius: 10px; padding: 8px; selection-background-color: {t.accent}; selection-color: white; }}
+QPlainTextEdit:focus {{ background: {t.panel}; border: 1.5px solid {t.accent}; }}
+QComboBox {{ background: {t.inset}; color: {t.ink}; border: 1.5px solid transparent; border-radius: 9px; padding: 5px 10px; }}
+QComboBox:hover {{ border: 1.5px solid {t.line_2}; }}
+QComboBox:focus {{ border: 1.5px solid {t.accent}; }}
+QComboBox::drop-down {{ border: none; width: 22px; }}
+QComboBox::down-arrow {{ image: url({chevron}); width: 12px; height: 12px; }}
+QComboBox QAbstractItemView {{ background: {t.panel}; color: {t.ink}; border: 1px solid {t.line_2}; border-radius: 8px; selection-background-color: {t.accent_soft}; selection-color: {t.accent_ink}; outline: 0; padding: 4px; }}
+QDateEdit {{ background: {t.inset}; color: {t.ink}; border: 1.5px solid transparent; border-radius: 9px; padding: 5px 10px; }}
+QDateEdit:focus {{ border: 1.5px solid {t.accent}; }}
+QDateEdit::drop-down {{ border: none; width: 22px; }}
+QDateEdit::down-arrow {{ image: url({chevron}); width: 12px; height: 12px; }}
+QCalendarWidget QAbstractItemView {{ selection-background-color: {t.accent}; selection-color: white; }}
 
 /* Boutons */
-QPushButton, QToolButton {{ background: transparent; color: {t.ink_2}; border: 1px solid {t.line_2}; border-radius: 6px; padding: 5px 10px; font-weight: 500; }}
-QPushButton:hover, QToolButton:hover {{ background: {t.sel}; color: {t.ink}; }}
-QPushButton:pressed, QToolButton:pressed {{ background: {t.inset}; }}
+QPushButton, QToolButton {{ background: transparent; color: {t.ink_2}; border: 1px solid {t.line_2}; border-radius: 8px; padding: 5px 11px; font-weight: 500; }}
+QPushButton:hover, QToolButton:hover {{ background: {t.sel}; color: {t.ink}; border-color: {t.accent_soft}; }}
+QPushButton:pressed, QToolButton:pressed {{ background: {t.accent_soft}; }}
 QPushButton:disabled, QToolButton:disabled {{ color: {t.ink_4}; border-color: {t.line}; }}
 QToolButton::menu-indicator {{ image: none; width: 0; }}
-QPushButton#primary {{ background: {t.ink}; color: {t.panel}; border: none; padding: 7px 12px; }}
-QPushButton#primary:hover {{ background: {t.ink_2}; }}
+QPushButton#primary {{ background: {t.accent}; color: white; border: none; border-radius: 9px; padding: 7px 14px; font-weight: 600; }}
+QPushButton#primary:hover {{ background: {t.accent_hover}; }}
 QPushButton#primary:disabled {{ background: {t.ink_4}; }}
-QPushButton#stop {{ background: {t.rec}; color: white; border: none; border-radius: 22px; padding: 12px 28px; font-size: 14px; font-weight: 600; }}
-QPushButton#stop:hover {{ background: {t.rec}; }}
-QPushButton#play {{ background: {t.ink}; color: {t.panel}; border: none; border-radius: 14px; min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px; padding: 0; }}
-QToolButton#nav {{ border: none; border-radius: 6px; padding: 6px 8px; color: {t.ink_2}; text-align: left; font-weight: 400; }}
+QPushButton#cta {{ background: {cta}; color: white; border: none; border-radius: 11px; padding: 9px 14px; font-size: 13px; font-weight: 600; text-align: left; }}
+QPushButton#cta:hover {{ background: {qss_gradient([(0.0, t.rec_ink), (1.0, t.accent_hover)])}; }}
+QPushButton#cta:disabled {{ background: {t.ink_4}; color: {t.panel}; }}
+QPushButton#danger {{ color: {t.rec_ink}; border-color: {t.rec_soft}; }}
+QPushButton#danger:hover {{ background: {t.rec_soft}; color: {t.rec_ink}; border-color: {t.rec_soft}; }}
+QPushButton#stop {{ background: {t.rec}; color: white; border: none; border-radius: 23px; min-height: 46px; max-height: 46px; padding: 0 34px; font-size: 14px; font-weight: 600; }}
+QPushButton#stop:hover {{ background: {t.rec_ink}; }}
+QPushButton#play {{ background: {t.accent}; color: white; border: none; border-radius: 15px; min-width: 30px; max-width: 30px; min-height: 30px; max-height: 30px; padding: 0; }}
+QPushButton#play:hover {{ background: {t.accent_hover}; }}
+QToolButton#nav {{ border: none; border-radius: 9px; padding: 6px 8px; color: {t.ink_2}; text-align: left; font-weight: 400; }}
 QToolButton#nav:hover {{ background: {t.sel}; }}
-QToolButton#nav:checked {{ background: {t.sel}; color: {t.ink}; font-weight: 500; }}
-QToolButton#ghost {{ border: none; padding: 4px 6px; color: {t.ink_3}; }}
-QToolButton#ghost:hover {{ background: {t.sel}; color: {t.ink}; }}
+QToolButton#nav:checked {{ background: {t.accent_soft}; color: {t.accent_ink}; font-weight: 600; }}
+QToolButton#ghost {{ border: none; padding: 4px 6px; color: {t.ink_3}; border-radius: 7px; }}
+QToolButton#ghost:hover {{ background: {t.accent_soft}; color: {t.accent_ink}; }}
+QToolButton#iconBtn {{ border: 1px solid {t.line_2}; border-radius: 11px; padding: 0; min-width: 36px; min-height: 34px; }}
+QToolButton#iconBtn:hover {{ background: {t.accent_soft}; border-color: {t.accent_soft}; }}
 
-/* Cases à cocher (actions) */
-QCheckBox {{ color: {t.ink_2}; spacing: 10px; padding: 6px 8px; border-radius: 6px; }}
+/* Cases à cocher (actions, checklist) */
+QCheckBox {{ color: {t.ink_2}; spacing: 10px; padding: 6px 8px; border-radius: 8px; }}
 QCheckBox:hover {{ background: {t.sel}; }}
-QCheckBox::indicator {{ width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid {t.ink_4}; background: transparent; }}
-QCheckBox::indicator:checked {{ background: {t.ink}; border-color: {t.ink}; image: url(:/qt-project.org/styles/commonstyle/images/standardbutton-apply-16.png); }}
+QCheckBox::indicator {{ width: 16px; height: 16px; border-radius: 5px; border: 1.5px solid {t.ink_4}; background: transparent; }}
+QCheckBox::indicator:hover {{ border-color: {t.accent}; }}
+QCheckBox::indicator:checked {{ background: {t.accent}; border-color: {t.accent}; image: url({check}); }}
 QCheckBox#follow {{ color: {t.ink_3}; font-size: 12px; padding: 0; }}
 QCheckBox#follow:hover {{ background: transparent; }}
 
-/* Listes */
+/* Listes, menus */
 QListView {{ background: transparent; border: none; outline: 0; }}
 QListView::item {{ border: none; }}
-QMenu {{ background: {t.panel}; color: {t.ink}; border: 1px solid {t.line_2}; border-radius: 8px; padding: 4px; }}
-QMenu::item {{ padding: 6px 24px 6px 10px; border-radius: 5px; }}
-QMenu::item:selected {{ background: {t.sel}; }}
+QListWidget::item {{ padding: 8px 10px; border-radius: 8px; color: {t.ink_2}; }}
+QListWidget::item:hover {{ background: {t.sel}; }}
+QListWidget::item:selected {{ background: {t.accent_soft}; color: {t.ink}; }}
+QMenu {{ background: {t.panel}; color: {t.ink}; border: 1px solid {t.line_2}; border-radius: 10px; padding: 5px; }}
+QMenu::item {{ padding: 7px 26px 7px 12px; border-radius: 6px; }}
+QMenu::item:selected {{ background: {t.accent_soft}; color: {t.accent_ink}; }}
 QMenu::separator {{ height: 1px; background: {t.line}; margin: 4px 6px; }}
 QTabWidget::pane {{ border: none; }}
 QStatusBar {{ background: {t.panel}; color: {t.ink_3}; border-top: 1px solid {t.line}; }}
-QFrame#status {{ background: {t.panel_2}; border: 1px solid {t.line}; border-radius: 8px; }}
-QFrame#status QLabel {{ color: {t.ink_2}; font-size: 12px; }}
-QFrame#status QLabel#sub {{ color: {t.ink_3}; font-size: 11px; }}
-QFrame#pill {{ border: 1px solid {t.line_2}; border-radius: 10px; }}
+QFrame#status {{ background: {t.panel}; border: 1px solid {t.line}; border-radius: 12px; }}
+QFrame#status QLabel {{ color: {t.ink_2}; font-size: 12px; font-weight: 500; }}
+QFrame#status QLabel#sub {{ color: {t.ink_3}; font-size: 11px; font-weight: 400; }}
+QFrame#brandMark {{ background: {aurora}; border-radius: 8px; }}
+QFrame#pill {{ border: 1px solid {t.line_2}; border-radius: 11px; }}
 QFrame#pill QLabel {{ color: {t.ink_2}; font-size: 12px; }}
-QFrame#pillOk {{ background: rgba(45,154,104,0.12); border: none; border-radius: 10px; }}
-QFrame#pillOk QLabel {{ color: {t.ok}; font-size: 12px; font-weight: 500; }}
-QFrame#pillBusy {{ background: {t.busy_soft}; border: none; border-radius: 10px; }}
-QFrame#pillBusy QLabel {{ color: {t.busy}; font-size: 12px; font-weight: 500; }}
-QFrame#pillRec {{ background: {t.rec_soft}; border: none; border-radius: 10px; }}
-QFrame#pillRec QLabel {{ color: {t.rec}; font-size: 12px; font-weight: 500; }}
+QFrame#pillOk {{ background: {t.ok_soft}; border: none; border-radius: 11px; }}
+QFrame#pillOk QLabel {{ color: {t.ok_ink}; font-size: 12px; font-weight: 600; }}
+QFrame#pillBusy {{ background: {t.accent_soft}; border: none; border-radius: 11px; }}
+QFrame#pillBusy QLabel {{ color: {t.accent_ink}; font-size: 12px; font-weight: 600; }}
+QFrame#pillRec {{ background: {t.rec_soft}; border: none; border-radius: 11px; }}
+QFrame#pillRec QLabel {{ color: {t.rec_ink}; font-size: 12px; font-weight: 600; }}
 QFrame#hline {{ background: {t.line}; max-height: 1px; min-height: 1px; border: none; }}
 QFrame#vline {{ background: {t.line}; max-width: 1px; min-width: 1px; border: none; }}
 QDialog QLabel {{ color: {t.ink}; }}
+QSlider::groove:horizontal {{ height: 4px; background: {t.inset}; border-radius: 2px; }}
+QSlider::sub-page:horizontal {{ background: {t.accent}; border-radius: 2px; }}
+QSlider::handle:horizontal {{ width: 12px; height: 12px; margin: -4px 0; border-radius: 6px; background: {t.accent}; }}
 
 /* Boards */
 QWidget#board {{ background: {t.canvas}; }}
-QFrame#boardList {{ background: {t.list_bg}; border-radius: 10px; }}
-QLabel#listTitle {{ color: {t.ink}; font-weight: 600; padding: 4px 6px; }}
-QLineEdit#listTitleEdit {{ background: {t.card_bg}; border: 1px solid {t.ink_3}; border-radius: 6px; padding: 3px 5px; font-weight: 600; }}
-QLabel#listCount {{ color: {t.ink_3}; font-size: 12px; }}
-QFrame#card {{ background: {t.card_bg}; border: 1px solid {t.line}; border-bottom: 2px solid {t.line_2}; border-radius: 8px; }}
-QFrame#card:hover {{ background: {t.card_hover}; border-color: {t.line_2}; }}
+QFrame#boardList {{ background: {t.list_bg}; border-radius: 14px; }}
+QLabel#listTitle {{ color: {t.ink}; font-weight: 600; padding: 4px 4px; }}
+QLineEdit#listTitleEdit {{ background: {t.card_bg}; border: 1.5px solid {t.accent}; border-radius: 7px; padding: 3px 5px; font-weight: 600; }}
+QLabel#listCount {{ color: {t.ink_3}; background: {t.panel}; font-size: 11px; font-weight: 600; border-radius: 9px; padding: 0 7px; min-height: 18px; max-height: 18px; }}
+QFrame#card {{ background: {t.card_bg}; border: 1px solid {t.line}; border-bottom: 2px solid {t.line_2}; border-radius: 10px; }}
+QFrame#card:hover {{ background: {t.card_hover}; border: 1px solid {t.accent}; border-bottom: 2px solid {t.accent}; }}
 QFrame#card QLabel {{ background: transparent; }}
-QFrame#cardMatch {{ background: {t.card_bg}; border: 2px solid {t.ink}; border-radius: 8px; }}
-QFrame#dropMark {{ background: {t.sel}; border: 1px dashed {t.ink_4}; border-radius: 8px; }}
+QFrame#dropMark {{ background: {t.accent_soft}; border: 1.5px dashed {t.accent}; border-radius: 10px; }}
 QLabel#cardTitle {{ color: {t.ink}; }}
 QLabel#badge {{ color: {t.ink_3}; font-size: 11px; }}
-QPlainTextEdit#composer {{ background: {t.card_bg}; border: 1px solid {t.line_2}; border-radius: 8px; padding: 6px 8px; }}
-QPlainTextEdit#composer:focus {{ border: 1px solid {t.ink_3}; }}
-QToolButton#addCard {{ border: none; border-radius: 6px; padding: 6px 8px; color: {t.ink_2}; text-align: left; font-weight: 400; }}
-QToolButton#addCard:hover {{ background: {t.sel}; color: {t.ink}; }}
-QFrame#addList {{ background: {t.sel}; border-radius: 10px; }}
-QToolButton#boardTitle {{ border: none; border-radius: 6px; padding: 4px 8px; color: {t.ink}; font-size: 18px; font-weight: 600; }}
-QToolButton#boardTitle:hover {{ background: {t.sel}; }}
-QToolButton#railAdd {{ border: none; padding: 1px 5px; color: {t.ink_3}; }}
-QToolButton#railAdd:hover {{ background: {t.sel}; color: {t.ink}; }}
-QToolButton#labelPick {{ border: 2px solid transparent; border-radius: 6px; min-width: 30px; min-height: 22px; padding: 0; }}
-QProgressBar {{ background: {t.inset}; border: none; border-radius: 3px; max-height: 6px; min-height: 6px; }}
-QProgressBar::chunk {{ background: {t.ok}; border-radius: 3px; }}
-QDateEdit {{ background: {t.inset}; color: {t.ink}; border: 1px solid transparent; border-radius: 7px; padding: 5px 10px; }}
-QDateEdit:focus {{ border: 1px solid {t.ink_3}; }}
-QSlider::groove:horizontal {{ height: 3px; background: {t.inset}; border-radius: 1px; }}
-QSlider::sub-page:horizontal {{ background: {t.ink}; border-radius: 1px; }}
-QSlider::handle:horizontal {{ width: 10px; height: 10px; margin: -4px 0; border-radius: 5px; background: {t.ink}; }}
+QPlainTextEdit#composer {{ background: {t.card_bg}; border: 1.5px solid {t.accent}; border-radius: 10px; padding: 6px 8px; }}
+QToolButton#addCard {{ border: none; border-radius: 8px; padding: 7px 8px; color: {t.ink_3}; text-align: left; font-weight: 500; }}
+QToolButton#addCard:hover {{ background: {t.accent_soft}; color: {t.accent_ink}; }}
+QFrame#addList {{ background: {t.sel}; border: 1.5px dashed {t.line_2}; border-radius: 14px; }}
+QToolButton#railAdd {{ border: none; padding: 2px 5px; color: {t.ink_3}; border-radius: 6px; }}
+QToolButton#railAdd:hover {{ background: {t.accent_soft}; color: {t.accent_ink}; }}
+QToolButton#labelPick {{ border: 2px solid transparent; border-radius: 12px; min-width: 40px; min-height: 24px; padding: 0 6px; }}
+QProgressBar {{ background: {t.inset}; border: none; border-radius: 4px; max-height: 8px; min-height: 8px; }}
+QProgressBar::chunk {{ background: {qss_gradient([(0.0, t.accent), (1.0, t.ok)])}; border-radius: 4px; }}
 """
 
 
