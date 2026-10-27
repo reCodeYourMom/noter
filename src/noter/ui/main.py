@@ -56,9 +56,10 @@ def main() -> int:
         pass
 
     # Instance unique : si Noter tourne déjà, on lui demande d'afficher sa fenêtre et on sort.
+    from noter.applink import socket_path
     from noter.ui.single_instance import SingleInstance
 
-    instance = SingleInstance("noter-app")
+    instance = SingleInstance(str(socket_path()))
     if not instance.acquire():
         instance.notify_existing("show")
         logger.info("Noter tourne déjà — fenêtre existante réactivée")
@@ -83,6 +84,11 @@ def main() -> int:
 
     tray.open_requested.connect(show_window)
     instance.message_received.connect(lambda msg: show_window() if msg == "show" else None)
+    # Commandes venues d'autres processus (serveur MCP, CLI) : rafraîchir, état, enregistrer…
+    from noter.ui.remote import RemoteCommands
+
+    remote = RemoteCommands(bridge, show_window)
+    instance.set_handler(remote.handle)
     bridge.recording_started.connect(lambda _: tray.set_recording(True))
     bridge.recording_stopped.connect(lambda _: tray.set_recording(False))
     bridge.recording_tick.connect(lambda elapsed, _lv: tray.set_elapsed(elapsed))

@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     # Jobs
     job_max_attempts: int = 3
 
+    # Serveur MCP (Noter depuis Claude Desktop / Claude Code)
+    mcp_read_only: bool = False     # seulement les outils de lecture
+    mcp_allow_delete: bool = False  # outils de suppression (enregistrements, cartes)
+    mcp_allow_record: bool = True   # démarrer / arrêter un enregistrement via l'app
+    mcp_launch_app: bool = True     # lancer Noter.app si besoin (traitement, enregistrement)
+
     @field_validator("whisper_language", mode="before")
     @classmethod
     def _language(cls, v):

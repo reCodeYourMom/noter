@@ -110,7 +110,10 @@ class Repository:
         status: RecordingStatus | None = None,
         project: str | None = None,
         tag: str | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
     ) -> list[Recording]:
+        """Les plus récents d'abord. since/until bornent la date de début (until exclu)."""
         conn = self.db.connect()
         sql = "SELECT r.* FROM recordings r"
         where, params = [], []
@@ -124,6 +127,12 @@ class Repository:
         if project:
             where.append("r.project = ?")
             params.append(project)
+        if since:
+            where.append("r.started_at >= ?")
+            params.append(_iso(since))
+        if until:
+            where.append("r.started_at < ?")
+            params.append(_iso(until))
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY r.started_at DESC LIMIT ? OFFSET ?"
@@ -197,6 +206,19 @@ class Repository:
                 "SELECT DISTINCT project FROM recordings WHERE project IS NOT NULL AND project != '' ORDER BY project"
             )
         ]
+
+    def project_counts(self) -> dict[str, int]:
+        rows = self.db.connect().execute(
+            "SELECT project, COUNT(*) FROM recordings WHERE project IS NOT NULL AND project != '' "
+            "GROUP BY project ORDER BY project"
+        )
+        return {r[0]: int(r[1]) for r in rows}
+
+    def tag_counts(self) -> dict[str, int]:
+        rows = self.db.connect().execute(
+            "SELECT t.name, COUNT(*) FROM tags t JOIN recording_tags rt ON rt.tag_id = t.id GROUP BY t.name ORDER BY t.name"
+        )
+        return {r[0]: int(r[1]) for r in rows}
 
     # ─── Segments ───────────────────────────────────────────────────
 

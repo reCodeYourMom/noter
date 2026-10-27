@@ -96,9 +96,34 @@ noter retry [<id>]               # relance les jobs en échec
 noter jobs                       # historique des jobs
 noter app install                # Noter.app dans ~/Applications
 noter service install            # lancement au login (LaunchAgent)
+noter mcp install                # Noter dans Claude Desktop / Claude Code
 ```
 
 Les IDs acceptent un préfixe (les 8 premiers caractères suffisent).
+
+## Dans Claude (MCP)
+
+Noter embarque un serveur [MCP](https://modelcontextprotocol.io) : Claude Desktop ou Claude Code peuvent fouiller tes calls et piloter tes boards, en conversation.
+
+```bash
+noter mcp install    # Claude Desktop (claude_desktop_config.json) + Claude Code si `claude` est installé
+noter mcp config     # l'entrée JSON, pour un autre client MCP
+noter mcp uninstall
+```
+
+Redémarre Claude Desktop, puis demande par exemple :
+
+- « Qu'est-ce qu'on a décidé avec ACME depuis septembre ? »
+- « Prépare mon call de 15h avec Julie » (ou le prompt *Préparer un call*)
+- « Rédige le mail de suivi du point d'hier »
+- « Quelles actions sont en retard ? Passe celles du call ACME en *En cours* »
+- « Dans le dernier call, SPEAKER_01 c'est Julie »
+
+**Ce qu'il expose.** Recherche plein texte, liste filtrée (projet, tag, statut, dates), fiche complète d'un call, transcript par fenêtres (pour rester léger), projets et tags, actions ouvertes de tous les calls, état de Noter. Côté tâches : boards, listes et cartes (création, étiquettes, échéance, checklist, déplacement), actions → cartes. Côté calls : titre, projet, tags, notes, noms des speakers, actions cochées, import d'un fichier, relance d'un traitement. Plus les resources `noter://recordings/{id}/summary`, `…/transcript`, `noter://boards/{id}` et quatre prompts (*Préparer un call*, *Mail de suivi*, *Synthèse d'un projet*, *Revue des tâches*).
+
+**Comment ça tourne.** Claude lance `noter mcp` en local (stdio, aucun port ouvert). Le serveur lit et écrit la même base que l'app, mais ne fait tourner ni Whisper ni le worker : un traitement demandé depuis Claude est mis en file et c'est Noter.app qui l'exécute (elle est lancée au besoin). Après chaque modification, l'app ouverte se rafraîchit d'elle-même. Démarrer ou arrêter un enregistrement passe aussi par l'app, qui s'affiche au premier plan.
+
+**Ce qui part chez Claude.** Uniquement ce que Claude lit avec les outils (résumés, extraits, transcripts demandés), comme pour n'importe quelle conversation. L'audio ne quitte jamais le Mac. Pour limiter : `NOTER_MCP_READ_ONLY=true` (lecture seule) ou `NOTER_MCP_ALLOW_RECORD=false`. Les suppressions sont désactivées par défaut (`NOTER_MCP_ALLOW_DELETE`) et demandent une confirmation explicite quand on les active.
 
 ## Configuration (`~/Noter/.env`)
 
@@ -113,6 +138,10 @@ Les IDs acceptent un préfixe (les 8 premiers caractères suffisent).
 | `NOTER_AUTO_SUMMARIZE` | `true` | résumer automatiquement après transcription |
 | `NOTER_AUTO_TASKS` | `true` | à la fin d'un résumé, une carte par action dans le premier board |
 | `NOTER_DIARIZE` | `false` | diarisation pyannote (nécessite `HF_TOKEN`) |
+| `NOTER_MCP_READ_ONLY` | `false` | serveur MCP en lecture seule |
+| `NOTER_MCP_ALLOW_DELETE` | `false` | outils de suppression dans le serveur MCP (avec confirmation) |
+| `NOTER_MCP_ALLOW_RECORD` | `true` | démarrer / arrêter un enregistrement depuis Claude |
+| `NOTER_MCP_LAUNCH_APP` | `true` | lancer Noter.app si un traitement ou un enregistrement le demande |
 | `NOTER_HOME` | `~/Noter` | déplace données, base, logs et `.env` |
 
 ## Fiabilité
@@ -145,8 +174,10 @@ src/noter/
 ├── transcription/    moteurs Whisper + diarisation
 ├── analyzer/         prompts + Claude (sortie structurée)
 ├── export/           PDF
+├── mcp_server/       serveur MCP (server : outils, resources, prompts ; views ; install : config Claude)
+├── applink.py        canal vers Noter.app (socket ~/Noter/app.sock) : rafraîchir, état, enregistrer
 ├── ui/               app desktop PySide6 : theme (tokens), icons, widgets/ (rail, liste, timeline, console, board…),
-│                     board_view (tâches), card_dialog (fiche d'une carte)
+│                     board_view (tâches), card_dialog (fiche d'une carte), remote (commandes du socket)
 ├── macapp.py         bundle Noter.app
 ├── cli.py            ligne de commande
 └── launchd.py        LaunchAgent macOS

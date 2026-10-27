@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
-from noter.models import Job
+from noter.models import Job, Recording
 from noter.service import Service
 
 
@@ -41,25 +41,33 @@ class ServiceBridge(QObject):
 
     def start_recording(self, with_system_audio: bool = True, title: str | None = None) -> None:
         try:
-            rec = self.service.start_recording(with_system_audio=with_system_audio, title=title)
+            self.start_recording_or_raise(with_system_audio, title)
         except Exception as e:  # noqa: BLE001
             self.error.emit(str(e))
-            return
+
+    def start_recording_or_raise(self, with_system_audio: bool = True, title: str | None = None,
+                                 project: str | None = None, tags: list[str] | None = None) -> Recording:
+        """Comme start_recording, mais l'erreur remonte à l'appelant (commandes à distance)."""
+        rec = self.service.start_recording(with_system_audio=with_system_audio, title=title, project=project, tags=tags)
         self._tick.start()
         self.recording_started.emit(rec)
         self.data_changed.emit()
+        return rec
 
     def stop_recording(self) -> None:
-        if not self.service.is_recording:
-            return
-        self._tick.stop()
         try:
-            rec = self.service.stop_recording()
+            self.stop_recording_or_raise()
         except Exception as e:  # noqa: BLE001
             self.error.emit(str(e))
-            return
+
+    def stop_recording_or_raise(self) -> Recording | None:
+        if not self.service.is_recording:
+            return None
+        self._tick.stop()
+        rec = self.service.stop_recording()
         self.recording_stopped.emit(rec)
         self.data_changed.emit()
+        return rec
 
     def import_files(self, paths: list[str]) -> int:
         n = 0

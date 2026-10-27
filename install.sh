@@ -57,7 +57,7 @@ fi
 [ -d .venv ] || "$PYTHON" -m venv .venv
 source .venv/bin/activate
 pip install --quiet --upgrade pip
-pip install --quiet -e "."
+pip install --quiet -e ".[mcp]"
 if [ "$(uname -m)" = "arm64" ]; then
     pip install --quiet -e ".[mlx]" || echo "⚠  mlx-whisper non installé — faster-whisper sera utilisé"
 fi
@@ -88,6 +88,12 @@ if [[ "${yn:-O}" =~ ^[OoYy]$ ]]; then
     .venv/bin/noter service install
 fi
 
+# 8. Serveur MCP : interroger ses calls et ses tâches depuis Claude Desktop / Claude Code
+read -r -p "   Brancher Noter à Claude Desktop / Claude Code (MCP) ? [O/n] " yn
+if [[ "${yn:-O}" =~ ^[OoYy]$ ]]; then
+    .venv/bin/noter mcp install
+fi
+
 cat <<MSG
 
 ═══════════════════════════════
@@ -100,6 +106,7 @@ cat <<MSG
   noter record          # enregistrer depuis le terminal
   noter import f.m4a    # traiter un fichier existant
   noter list / show / search
+  noter mcp install     # Noter dans Claude Desktop / Claude Code
 
   Premier lancement : Whisper télécharge son modèle (~3 GB pour large-v3).
 MSG

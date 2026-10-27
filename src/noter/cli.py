@@ -32,6 +32,13 @@ def _service():
     return Service(s)
 
 
+def _refresh_app() -> None:
+    """Si Noter.app tourne, elle relit la base (sinon rien)."""
+    from noter.applink import AppLink
+
+    AppLink().refresh()
+
+
 def _status(s: RecordingStatus) -> str:
     return f"[{STATUS_STYLE.get(str(s), '')}]{s}[/]"
 
@@ -92,6 +99,7 @@ def import_cmd(
     svc = _service()
     rec = svc.import_file(path, title=title, project=project, tags=tag or [], enqueue=not no_process)
     console.print(f"[green]Importé[/] {rec.display_title} ({rec.duration_text}) → {rec.dir_path}")
+    _refresh_app()
     if not no_process:
         svc.jobs.run_pending()
         _print_summary(svc, rec.id)
@@ -195,6 +203,7 @@ def edit(
     if tag is not None and len(tag) > 0:
         fields["tags"] = tag
     rec = svc.update_metadata(rec.id, **fields)
+    _refresh_app()
     console.print(f"[green]OK[/] {rec.display_title}")
 
 
@@ -208,6 +217,7 @@ def delete(recording_id: str, keep_files: bool = typer.Option(False, "--keep-fil
     if not typer.confirm(f"Supprimer « {rec.display_title} » ?"):
         raise typer.Exit()
     svc.delete_recording(rec.id, delete_files=not keep_files)
+    _refresh_app()
     console.print("[green]Supprimé.[/]")
 
 
@@ -320,6 +330,64 @@ def app_uninstall():
     console.print("[green]Noter.app supprimé[/]" if macapp.uninstall() else "[dim]Rien à supprimer[/]")
 
 
+# ─── Serveur MCP (Claude Desktop / Claude Code) ─────────────────────
+
+mcp_app = typer.Typer(help="Serveur MCP : Noter depuis Claude Desktop ou Claude Code.", invoke_without_command=True)
+app.add_typer(mcp_app, name="mcp")
+
+
+@mcp_app.callback()
+def mcp_serve(ctx: typer.Context):
+    """Sans sous-commande : lance le serveur MCP en stdio (c'est ce qu'exécute Claude)."""
+    if ctx.invoked_subcommand is not None:
+        return
+    from noter.mcp_server.server import main
+
+    main()
+
+
+@mcp_app.command("install")
+def mcp_install(
+    desktop: bool = typer.Option(True, "--desktop/--no-desktop", help="Claude Desktop (claude_desktop_config.json)"),
+    claude_code: bool = typer.Option(True, "--claude-code/--no-claude-code", help="Claude Code (si `claude` est installé)"),
+):
+    """Déclare Noter comme serveur MCP dans Claude Desktop et Claude Code."""
+    from noter.mcp_server import install
+
+    if desktop and not install.desktop_config_path().parent.exists():
+        console.print("[dim]Claude Desktop non trouvé (dossier de configuration absent) : ignoré[/]")
+    elif desktop:
+        path = install.install_desktop()
+        console.print(f"[green]Claude Desktop[/] : {path}\n[dim]Redémarre Claude Desktop pour voir les outils Noter.[/]")
+    if claude_code:
+        ok, out = install.install_claude_code()
+        if ok:
+            console.print("[green]Claude Code[/] : serveur « noter » ajouté (portée utilisateur)")
+        else:
+            console.print(f"[yellow]Claude Code non configuré[/] ({out}). Commande à lancer :")
+            console.print("  " + " ".join(install.claude_code_command()), soft_wrap=True)
+
+
+@mcp_app.command("uninstall")
+def mcp_uninstall():
+    """Retire Noter de Claude Desktop et de Claude Code."""
+    from noter.mcp_server import install
+
+    console.print("[green]Retiré de Claude Desktop[/]" if install.uninstall_desktop() else "[dim]Absent de Claude Desktop[/]")
+    if install.uninstall_claude_code():
+        console.print("[green]Retiré de Claude Code[/]")
+
+
+@mcp_app.command("config")
+def mcp_config():
+    """Affiche l'entrée JSON à coller dans la config d'un client MCP."""
+    import json
+
+    from noter.mcp_server import install
+
+    console.print_json(json.dumps({"mcpServers": {install.SERVER_NAME: install.server_entry()}}))
+
+
 @app.command()
 def doctor():
     """Vérifie la configuration."""
@@ -342,6 +410,20 @@ def doctor():
         table.add_row("BlackHole", "[green]oui[/]" if find_blackhole() else "[yellow]non[/]")
     except Exception as e:  # noqa: BLE001
         table.add_row("Audio", f"[red]{e}[/]")
+    try:
+        import mcp  # noqa: F401
+
+        from noter.mcp_server import install
+
+        where = [n for n, ok in (("Claude Desktop", install.is_installed_desktop()),) if ok]
+        table.add_row("MCP", "[green]prêt[/]" + (f" · {', '.join(where)}" if where else " · [dim]noter mcp install[/]"))
+    except ImportError:
+        table.add_row("MCP", "[yellow]SDK absent[/] (pip install -e '.[mcp]')")
+    except ValueError as e:
+        table.add_row("MCP", f"[red]config Claude illisible[/] : {e}")
+    from noter.applink import AppLink
+
+    table.add_row("Noter.app", "[green]lancée[/]" if AppLink().is_running() else "[dim]fermée[/]")
     svc = _service()
     table.add_row("Enregistrements", str(svc.repo.count_recordings()))
     table.add_row("Jobs en attente", str(svc.repo.pending_job_count()))

@@ -177,6 +177,46 @@ def test_single_instance_lock(qapp):
     assert received == ["show"]
 
 
+def test_app_answers_commands_on_its_socket(qapp, window, home):
+    """noter.applink (sans Qt) ↔ SingleInstance + RemoteCommands : le canal qu'utilise le serveur MCP."""
+    import threading
+
+    from noter.applink import AppLink, socket_path
+    from noter.ui.remote import RemoteCommands
+    from noter.ui.single_instance import SingleInstance
+
+    w, rec = window
+    shown, refreshed = [], []
+    instance = SingleInstance(str(socket_path()))
+    assert instance.acquire()
+    remote = RemoteCommands(w.bridge, lambda: shown.append(True))
+    instance.set_handler(remote.handle)
+    instance.message_received.connect(lambda msg: shown.append(msg))
+    w.bridge.data_changed.connect(lambda: refreshed.append(True))
+
+    def ask(*commands):
+        replies = []
+        t = threading.Thread(target=lambda: replies.extend(AppLink().send(c) for c in commands))
+        t.start()
+        while t.is_alive():
+            qapp.processEvents()
+            t.join(0.01)
+        return replies
+
+    status, refresh, unknown, show = ask("status", "refresh", "danse", "show")
+    assert status == {"ok": True, "recording": None, "job": None, "pending_jobs": 0}
+    assert refresh == {"ok": True} and refreshed
+    assert unknown["ok"] is False and "danse" in unknown["error"]
+    assert show == {"ok": True} and shown == [True]
+    (stop,) = ask("record_stop")
+    assert stop == {"ok": False, "error": "Aucun enregistrement en cours"}
+
+    # Une seconde instance de l'app parle toujours en texte brut.
+    assert SingleInstance(str(socket_path())).notify_existing("show")
+    _process(qapp, 200)
+    assert shown == [True, "show"]
+
+
 def test_console_warns_on_digital_silence(qapp):
     from datetime import datetime
     from pathlib import Path
