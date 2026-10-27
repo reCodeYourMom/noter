@@ -1,6 +1,7 @@
 """CLI Noter."""
 from __future__ import annotations
 
+import shutil
 import signal
 import time
 from pathlib import Path
@@ -363,6 +364,8 @@ def mcp_install(
         ok, out = install.install_claude_code()
         if ok:
             console.print("[green]Claude Code[/] : serveur « noter » ajouté (portée utilisateur)")
+        elif shutil.which("claude") is None:
+            console.print("[dim]Claude Code n'est pas installé : ignoré (rien à faire si tu utilises Claude Desktop)[/]")
         else:
             console.print(f"[yellow]Claude Code non configuré[/] ({out}). Commande à lancer :")
             console.print("  " + " ".join(install.claude_code_command()), soft_wrap=True)
