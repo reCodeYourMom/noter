@@ -154,6 +154,7 @@ class RecordingDetail(QWidget):
         self.btn_more.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         menu = QMenu(self.btn_more)
         menu.addAction("Retranscrire", lambda: self._enqueue(JobKind.TRANSCRIBE))
+        self.a_all_tasks = menu.addAction("Ajouter toutes les actions aux tâches", self._all_to_board)
         menu.addAction("Copier le résumé (Markdown)", self._copy_summary)
         menu.addAction("Copier le transcript", self._copy_transcript)
         menu.addSeparator()
@@ -357,6 +358,7 @@ class RecordingDetail(QWidget):
         clear_layout(self.summary_lay)
         rec = self.rec
         summary = self.repo.get_summary(rec.id) if rec else None
+        self.a_all_tasks.setEnabled(bool(summary and summary.actions))
         t = theme.current()
         if summary is None:
             msg = {
@@ -492,6 +494,14 @@ class RecordingDetail(QWidget):
         for b in boards:
             menu.addAction(b.name, lambda bid=b.id: self._create_card(idx, bid))
         menu.exec(anchor.mapToGlobal(anchor.rect().bottomLeft()))
+
+    def _all_to_board(self) -> None:
+        """Pour les calls d'avant l'ajout automatique : toutes les actions manquantes → cartes."""
+        if not self.rec:
+            return
+        self.service.cards_from_summary(self.rec.id)
+        self._fill_summary()
+        self.changed.emit()
 
     def _create_card(self, idx: int, board_id: int | None) -> None:
         if not self.rec:

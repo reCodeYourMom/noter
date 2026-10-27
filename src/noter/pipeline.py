@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from noter import tasks
 from noter.analyzer.claude import Summarizer, to_summary
 from noter.config import Settings
 from noter.models import RecordingStatus, format_duration
@@ -76,7 +77,8 @@ class Pipeline:
             self.repo.set_status(rec.id, RecordingStatus.FAILED)
             raise
 
-    def summarize(self, recording_id: str, template: str = "default") -> None:
+    def summarize(self, recording_id: str, template: str = "default") -> int:
+        """Résume l'enregistrement. Retourne le nombre de cartes créées dans les tâches."""
         rec = self.repo.get_recording(recording_id)
         if rec is None:
             raise ValueError(f"Enregistrement {recording_id} introuvable")
@@ -98,6 +100,20 @@ class Pipeline:
         except Exception:
             self.repo.set_status(rec.id, RecordingStatus.FAILED)
             raise
+        return self._actions_to_tasks(rec.id)
+
+    def _actions_to_tasks(self, recording_id: str) -> int:
+        """Toutes les actions du compte-rendu → cartes. Un échec ici ne doit pas faire échouer le résumé."""
+        if not self.settings.auto_tasks:
+            return 0
+        try:
+            created = tasks.cards_from_summary(self.repo, recording_id)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Actions non ajoutées aux tâches pour %s : %s", recording_id[:8], e)
+            return 0
+        if created:
+            logger.info("%d action(s) ajoutée(s) aux tâches pour %s", len(created), recording_id[:8])
+        return len(created)
 
     def render_outputs(self, recording_id: str) -> None:
         """(Ré)écrit summary.md, rapport.pdf et meta.json depuis la base."""

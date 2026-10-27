@@ -11,10 +11,10 @@ import logging
 import shutil
 import threading
 import uuid
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
 
-from noter import notify
+from noter import notify, tasks
 from noter.audio.mixer import mix_wavs, wav_duration
 from noter.audio.recorder import MIC_TMP, SYS_TMP, Recorder
 from noter.audio.waveform import write_waveform
@@ -27,9 +27,6 @@ from noter.storage.db import Database
 from noter.storage.repo import Repository
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_BOARD_NAME = "Mes tâches"
-DEFAULT_LISTS = ["À faire", "En cours", "Terminé"]
 
 AUDIO_EXTENSIONS = {".wav", ".m4a", ".mp3", ".mp4", ".aac", ".flac", ".ogg", ".caf", ".webm", ".opus"}
 
@@ -190,41 +187,19 @@ class Service:
 
     def create_board(self, name: str) -> Board:
         """Nouveau board avec les trois listes classiques (à faire, en cours, terminé)."""
-        return self.repo.create_board(name, lists=DEFAULT_LISTS)
+        return tasks.create_board(self.repo, name)
 
     def default_board(self) -> Board:
         """Premier board, créé à la volée s'il n'y en a pas encore."""
-        boards = self.repo.list_boards()
-        return boards[0] if boards else self.create_board(DEFAULT_BOARD_NAME)
+        return tasks.default_board(self.repo)
 
     def card_from_action(self, recording_id: str, action_index: int, board_id: int | None = None) -> Card:
-        """Crée une carte (en haut de la première liste) à partir d'une action d'un compte-rendu.
+        """Une action d'un compte-rendu → une carte (idempotent)."""
+        return tasks.card_from_action(self.repo, recording_id, action_index, board_id)
 
-        Idempotent : si l'action a déjà une carte, elle est renvoyée telle quelle.
-        """
-        rec = self.repo.get_recording(recording_id)
-        summary = self.repo.get_summary(recording_id)
-        if rec is None or summary is None or not 0 <= action_index < len(summary.actions):
-            raise IndexError("action introuvable")
-        action = summary.actions[action_index]
-        for card in self.repo.cards_for_recording(rec.id):
-            if card.title == action.text.strip():
-                return card
-        board = self.repo.get_board(board_id) if board_id else self.default_board()
-        if board is None:
-            raise ValueError("Board introuvable")
-        lists = self.repo.get_lists(board.id)
-        first = lists[0] if lists else self.repo.create_list(board.id, DEFAULT_LISTS[0])
-        lines = [f"Issu de « {rec.display_title} » ({rec.started_at:%d/%m/%Y})."]
-        if action.owner:
-            lines.insert(0, f"Responsable : {action.owner}")
-        due = _parse_due(action.due)
-        if action.due and due is None:  # « vendredi » : pas une date exploitable, on garde l'info
-            lines.insert(0, f"Échéance annoncée : {action.due}")
-        return self.repo.create_card(
-            first.id, action.text, at_top=True, description="\n".join(lines),
-            due=due, done=action.done, recording_id=rec.id,
-        )
+    def cards_from_summary(self, recording_id: str, board_id: int | None = None) -> list[Card]:
+        """Toutes les actions d'un compte-rendu qui n'ont pas encore de carte → des cartes."""
+        return tasks.cards_from_summary(self.repo, recording_id, board_id)
 
     # ─── Divers ─────────────────────────────────────────────────────
 
@@ -246,14 +221,6 @@ class Service:
         assert rec is not None
         self.pipeline.render_outputs(rec.id)
         return rec
-
-
-def _parse_due(text: str | None) -> date | None:
-    """Échéance d'une action : seules les dates ISO (AAAA-MM-JJ) sont reconnues."""
-    try:
-        return date.fromisoformat(text.strip()) if text else None
-    except ValueError:
-        return None
 
 
 def _probe_duration(path: Path) -> float:

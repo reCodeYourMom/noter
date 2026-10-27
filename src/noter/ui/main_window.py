@@ -229,6 +229,8 @@ class MainWindow(QMainWindow):
 
         self.list_model.refresh()
         self._update_page_title()
+        if self.in_board:  # des cartes ont pu arriver d'un résumé qui vient de se terminer
+            self.board_view.refresh()
         searching = bool(self.search.text().strip())
         if not searching:
             if self.list_model.recording_count() == 0:

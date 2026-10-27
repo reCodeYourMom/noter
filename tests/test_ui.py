@@ -653,3 +653,34 @@ def test_console_warns_when_system_audio_cannot_arrive(qapp):
     c.begin(rec, "Micro seul", False, AudioRoute(mic="MacBook Pro Microphone", output="AirPods Pro", system=None, wanted_system=False))
     c.tick(30.0, {"MIC": 0.05})
     assert c.sys_warn.isHidden()
+
+
+def test_detail_menu_adds_all_missing_actions_at_once(qapp, window, service):
+    from PySide6.QtWidgets import QToolButton
+
+    w, rec = window
+    assert w.detail.a_all_tasks.isEnabled()  # le résumé du call a une action
+    w.detail.a_all_tasks.trigger()
+    _process(qapp, 200)
+    assert [c.title for c in service.repo.cards_for_recording(rec.id)] == ["Envoyer le devis"]
+    checks = [b for b in w.detail.summary_box.findChildren(QToolButton) if b.toolTip().startswith("Déjà dans un board")]
+    assert len(checks) == 1
+    w.detail.a_all_tasks.trigger()  # une seconde fois : rien de plus
+    assert len(service.repo.cards_for_recording(rec.id)) == 1
+
+
+def test_board_on_screen_refreshes_when_a_call_adds_cards(qapp, board_window, service):
+    w, board, lists, cards = board_window
+    service.repo.create_card(lists[0].id, "Arrivée d’un résumé", at_top=True)  # comme le ferait le worker
+    w.refresh()  # déclenché par la fin du job
+    assert w.board_view.strip.columns[0].tiles()[0].card.title == "Arrivée d’un résumé"
+
+
+def test_settings_dialog_saves_auto_tasks(qapp, home, settings):
+    from noter.ui.settings_dialog import SettingsDialog
+
+    dlg = SettingsDialog(settings)
+    assert not dlg.auto_tasks.isChecked()  # suit le réglage courant (coupé dans les tests)
+    dlg.auto_tasks.setChecked(True)
+    dlg.save()
+    assert read_env(home / ".env")["NOTER_AUTO_TASKS"] == "true"

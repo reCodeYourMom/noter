@@ -187,3 +187,95 @@ def test_card_from_action_parses_iso_due_date(service, wav):
     service.repo.upsert_summary(summary)
     card = service.card_from_action(rec.id, 0)
     assert card.due == date(2026, 4, 2) and "Échéance annoncée" not in card.description
+
+
+# ─── Actions → tâches, automatiquement à la fin du résumé ───────────
+
+
+def _three_actions():
+    from noter.analyzer.claude import ActionOut, SummaryOut
+
+    return FakeSummarizer(SummaryOut(
+        tldr="Point client.", key_points=[], decisions=[],
+        actions=[
+            ActionOut(text="Envoyer le devis", owner="Nassim", due="vendredi"),
+            ActionOut(text="Relancer le juridique", owner=None, due="2026-11-03"),
+            ActionOut(text="Préparer la démo", owner="Claire", due=None),
+        ],
+    ))
+
+
+def _auto_tasks(service, settings, engine, summarizer):
+    settings.auto_tasks = True
+    service.pipeline = Pipeline(service.repo, settings, engine=engine, summarizer=summarizer)
+    service.jobs.pipeline = service.pipeline
+
+
+def test_every_action_lands_in_the_board_when_the_summary_is_ready(service, settings, engine, wav):
+    from datetime import date
+
+    _auto_tasks(service, settings, engine, _three_actions())
+    notes = []
+    service.jobs.notify = lambda title, msg: notes.append((title, msg))
+
+    rec = service.import_file(wav, title="Point client ACME")
+    service.jobs.run_pending()
+
+    board = service.repo.list_boards()[0]
+    todo = service.repo.get_lists(board.id)[0]
+    cards = service.repo.cards_in_list(todo.id)
+    assert board.name == "Mes tâches" and todo.name == "À faire"
+    assert [c.title for c in cards] == ["Envoyer le devis", "Relancer le juridique", "Préparer la démo"]  # ordre du compte-rendu
+    assert all(c.recording_id == rec.id for c in cards)
+    assert cards[1].due == date(2026, 11, 3) and "Responsable : Claire" in cards[2].description
+    assert notes[-1] == ("Noter — résumé prêt", "Point client ACME · 3 actions ajoutées aux tâches")
+
+    # Régénérer le résumé ne crée pas de doublons ; une carte déjà triée ailleurs n'est pas recréée
+    doing = service.repo.get_lists(board.id)[1]
+    service.repo.move_card(cards[0].id, doing.id, 0)
+    service.jobs.enqueue(rec.id, JobKind.SUMMARIZE)
+    service.jobs.run_pending()
+    assert [c.title for c in service.repo.cards_in_list(todo.id)] == ["Relancer le juridique", "Préparer la démo"]
+    assert [c.title for c in service.repo.cards_in_list(doing.id)] == ["Envoyer le devis"]
+    assert notes[-1] == ("Noter — résumé prêt", "Point client ACME")  # rien de nouveau : pas de compteur
+
+
+def test_new_calls_go_on_top_of_the_first_board(service, settings, engine, tmp_path):
+    from tests.conftest import make_wav
+
+    _auto_tasks(service, settings, engine, _three_actions())
+    mine = service.create_board("Boulot")  # board existant : c'est lui qui reçoit les cartes
+    first = service.repo.get_lists(mine.id)[0]
+    old = service.repo.create_card(first.id, "Carte déjà triée")
+    service.import_file(make_wav(tmp_path / "a.wav"), title="Call 1")
+    service.jobs.run_pending()
+    assert len(service.repo.list_boards()) == 1
+    titles = [c.title for c in service.repo.cards_in_list(first.id)]
+    assert titles[:3] == ["Envoyer le devis", "Relancer le juridique", "Préparer la démo"] and titles[-1] == old.title
+
+
+def test_auto_tasks_can_be_switched_off(service, settings, engine, wav):
+    settings.auto_tasks = False
+    service.pipeline = Pipeline(service.repo, settings, engine=engine, summarizer=_three_actions())
+    service.jobs.pipeline = service.pipeline
+    rec = service.import_file(wav)
+    service.jobs.run_pending()
+    assert service.repo.list_boards() == [] and service.repo.get_recording(rec.id).status == RecordingStatus.DONE
+    # Rattrapage manuel (calls d'avant la fonctionnalité, ou option coupée) : tout d'un coup, une seule fois
+    assert [c.title for c in service.cards_from_summary(rec.id)] == ["Envoyer le devis", "Relancer le juridique", "Préparer la démo"]
+    assert service.cards_from_summary(rec.id) == []
+
+
+def test_a_task_failure_never_fails_the_summary(service, settings, engine, wav, monkeypatch):
+    from noter import tasks
+
+    _auto_tasks(service, settings, engine, _three_actions())
+
+    def boom(*_a, **_k):
+        raise RuntimeError("base verrouillée")
+
+    monkeypatch.setattr(tasks, "cards_from_summary", boom)
+    rec = service.import_file(wav)
+    service.jobs.run_pending()
+    assert service.repo.get_recording(rec.id).status == RecordingStatus.DONE  # le résumé est bien là
+    assert [j.status for j in service.repo.list_jobs(recording_id=rec.id)] == [JobStatus.DONE, JobStatus.DONE]
