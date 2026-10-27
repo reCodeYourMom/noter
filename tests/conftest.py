@@ -26,7 +26,9 @@ def home(tmp_path, monkeypatch) -> Path:
 
 @pytest.fixture
 def settings(home) -> Settings:
-    return Settings(data_dir=home / "recordings", db_path=home / "noter.db", log_path=home / "noter.log")
+    # Ajout automatique des actions aux tâches coupé par défaut : les tests qui en parlent l'activent,
+    # les autres gardent une base sans board.
+    return Settings(data_dir=home / "recordings", db_path=home / "noter.db", log_path=home / "noter.log", auto_tasks=False)
 
 
 @pytest.fixture

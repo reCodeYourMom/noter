@@ -81,6 +81,9 @@ class SettingsDialog(QDialog):
         self.language.setPlaceholderText("auto (ou fr, en…)")
         self.auto = QCheckBox("Résumer automatiquement après transcription")
         self.auto.setChecked(env.get("NOTER_AUTO_SUMMARIZE", str(settings.auto_summarize)).lower() in ("1", "true", "yes"))
+        self.auto_tasks = QCheckBox("Ajouter toutes les actions aux tâches à la fin de chaque call")
+        self.auto_tasks.setToolTip("Une carte par action, en haut de la liste « À faire » du premier board de la section Tâches.")
+        self.auto_tasks.setChecked(env.get("NOTER_AUTO_TASKS", str(settings.auto_tasks)).lower() in ("1", "true", "yes"))
 
         t = theme.current()
         form = QFormLayout(self)
@@ -99,6 +102,7 @@ class SettingsDialog(QDialog):
         form.addRow("Modèle Claude", self.model)
         form.addRow("Effort", self.effort)
         form.addRow("", self.auto)
+        form.addRow("", self.auto_tasks)
         form.addItem(QSpacerItem(0, 6))
         form.addRow(section_label("Transcription · Whisper", t.ok))
         form.addRow("Modèle Whisper", self.whisper)
@@ -125,6 +129,7 @@ class SettingsDialog(QDialog):
             "NOTER_WHISPER_MODEL": self.whisper.currentText().strip() or "large-v3",
             "NOTER_WHISPER_LANGUAGE": self.language.text().strip(),
             "NOTER_AUTO_SUMMARIZE": "true" if self.auto.isChecked() else "false",
+            "NOTER_AUTO_TASKS": "true" if self.auto_tasks.isChecked() else "false",
         }
 
     def save(self) -> None:

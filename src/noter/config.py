@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     claude_model: str = "claude-opus-5-5"
     claude_effort: str = "medium"
     auto_summarize: bool = True
+    auto_tasks: bool = True  # à la fin d'un résumé, chaque action devient une carte du premier board
 
     # Whisper
     whisper_model: str = "large-v3"

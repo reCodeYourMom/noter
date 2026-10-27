@@ -75,7 +75,8 @@ Section **Tâches** du rail : un item par board, `+` pour en créer un (il déma
 - **Cartes** : « Ajouter une carte » en bas de chaque liste (`Entrée` valide et reste ouvert pour enchaîner, `Maj+Entrée` = saut de ligne, `Échap` annule). On les **glisse-dépose** d'une liste à l'autre ou dans la même liste ; un cadre pointillé montre où elle atterrit, et le board défile tout seul quand on longe un bord.
 - **Fiche d'une carte** (clic) : titre, **étiquettes** colorées, **échéance** (en retard = corail, imminente = iris, terminée = menthe) ; chaque liste prend à tour de rôle une des trois couleurs, description, **checklist** avec progression, déplacement vers une autre liste, suppression. Tout s'enregistre au fil de l'eau.
 - **Filtre** en haut du board : titre, description ou nom d'étiquette (`⌘F`).
-- **Lien avec les enregistrements** : dans le compte-rendu, chaque action a un bouton *Ajouter aux tâches* qui crée une carte (responsable et échéance reprises, lien vers l'enregistrement). Le bouton devient une coche qui ouvre la carte, et la carte ouvre l'enregistrement d'origine. Les boards vivent dans `~/Noter/noter.db`.
+- **Automatique** : à la fin de chaque call, dès que le résumé est prêt, **toutes les actions** deviennent des cartes, en haut de la liste *À faire* du premier board de la section Tâches (« Mes tâches » est créé s'il n'y en a pas). Il ne reste qu'à trier. La notification « résumé prêt » indique combien d'actions ont été ajoutées. Régénérer un résumé n'ajoute que les actions nouvelles, jamais de doublon, même si tu as déjà déplacé la carte. Pour les calls d'avant, menu `…` de la fiche → *Ajouter toutes les actions aux tâches*. Désactivable dans les Réglages (`NOTER_AUTO_TASKS=false`).
+- **Lien avec les enregistrements** : dans le compte-rendu, chaque action a aussi un bouton *Ajouter aux tâches* qui crée une carte (responsable et échéance reprises, lien vers l'enregistrement). Le bouton devient une coche qui ouvre la carte, et la carte ouvre l'enregistrement d'origine. Les boards vivent dans `~/Noter/noter.db`.
 
 Raccourcis : `⌘R` enregistrer, `⌘⇧R` micro seul, `⌘.` arrêter, `⌘I` importer, `⌘F` rechercher, `⌘,` réglages, `⌘⌫` supprimer.
 
@@ -109,6 +110,7 @@ Les IDs acceptent un préfixe (les 8 premiers caractères suffisent).
 | `NOTER_WHISPER_MODEL` | `large-v3` | `tiny` … `large-v3`, `large-v3-turbo` |
 | `NOTER_WHISPER_LANGUAGE` | auto | forcer `fr`, `en`… |
 | `NOTER_AUTO_SUMMARIZE` | `true` | résumer automatiquement après transcription |
+| `NOTER_AUTO_TASKS` | `true` | à la fin d'un résumé, une carte par action dans le premier board |
 | `NOTER_DIARIZE` | `false` | diarisation pyannote (nécessite `HF_TOKEN`) |
 | `NOTER_HOME` | `~/Noter` | déplace données, base, logs et `.env` |
 

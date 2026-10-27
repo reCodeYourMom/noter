@@ -123,11 +123,12 @@ class JobQueue:
             self._current = job
         self._emit(job)
         logger.info("Job #%d %s %s (tentative %d/%d)", job.id, job.kind, job.recording_id[:8], job.attempts, job.max_attempts)
+        cards = 0
         try:
             if job.kind == JobKind.TRANSCRIBE:
                 self.pipeline.transcribe(job.recording_id)
             elif job.kind == JobKind.SUMMARIZE:
-                self.pipeline.summarize(job.recording_id)
+                cards = self.pipeline.summarize(job.recording_id) or 0
             else:
                 raise ValueError(f"Job inconnu : {job.kind}")
             done = self.repo.finish_job(job.id, ok=True)
@@ -135,7 +136,7 @@ class JobQueue:
                 self._abandoned(job)
                 return
             self._emit(done)
-            self._after_success(done)
+            self._after_success(done, cards)
         except Exception as e:  # noqa: BLE001
             if self.repo.get_recording(job.recording_id) is None:
                 self._abandoned(job)
@@ -159,7 +160,7 @@ class JobQueue:
         job.status = JobStatus.DONE
         self._emit(job)
 
-    def _after_success(self, job: Job) -> None:
+    def _after_success(self, job: Job, cards: int = 0) -> None:
         if job.kind == JobKind.TRANSCRIBE:
             if self.auto_summarize:
                 self.enqueue(job.recording_id, JobKind.SUMMARIZE)
@@ -167,7 +168,10 @@ class JobQueue:
                 self.notify("Noter", "Transcription terminée")
         elif job.kind == JobKind.SUMMARIZE:
             rec = self.repo.get_recording(job.recording_id)
-            self.notify("Noter — résumé prêt", rec.display_title if rec else job.recording_id[:8])
+            msg = rec.display_title if rec else job.recording_id[:8]
+            if cards:
+                msg += f" · {cards} action{'s' if cards > 1 else ''} ajoutée{'s' if cards > 1 else ''} aux tâches"
+            self.notify("Noter — résumé prêt", msg)
 
     def _emit(self, job: Job) -> None:
         for fn in list(self._listeners):
