@@ -218,7 +218,8 @@ class RecordingDetail(QWidget):
         rl.setContentsMargins(24, 18, 20, 12)
         rl.setSpacing(10)
         tr_head = QHBoxLayout()
-        tr_head.addWidget(section_label("Transcript", theme.current().accent))
+        self.transcript_label = section_label("Transcript", theme.current().accent)
+        tr_head.addWidget(self.transcript_label)
         tr_head.addStretch()
         self.follow = QCheckBox("Suivre la lecture")
         self.follow.setObjectName("follow")
@@ -244,6 +245,12 @@ class RecordingDetail(QWidget):
         root.addLayout(body, 1)
 
         self.setEnabled(False)
+        theme.on_change(self._on_theme)
+
+    def _on_theme(self, t) -> None:
+        self.transcript_label.setText(section_label("Transcript", t.accent).text())
+        if self.rec:  # synthèse, pastilles et légende sont reconstruites avec les nouvelles couleurs
+            self.refresh_if(self.rec.id)
 
     # ─── Chargement ─────────────────────────────────────────────────
 
@@ -472,10 +479,9 @@ class RecordingDetail(QWidget):
 
     def _board_button(self, idx: int, text: str, cards: dict) -> QToolButton:
         """« → Board » d'une action : crée la carte, ou ouvre celle qui existe déjà."""
-        t = theme.current()
         card = cards.get(text.strip())
         btn = tool_button("check" if card else "board", ghost=True)
-        btn.setIcon(icons.icon("check" if card else "board", t.ok if card else t.ink_3, 14))
+        icons.bind(btn, "check" if card else "board", "ok" if card else "ink_3", 14)
         btn.setToolTip("Déjà dans un board : ouvrir la carte" if card else "Ajouter aux tâches (board)")
         if card:
             btn.clicked.connect(lambda _=False, cid=card.id: self.card_requested.emit(cid))
@@ -492,8 +498,12 @@ class RecordingDetail(QWidget):
             return
         menu = QMenu(self)
         for b in boards:
-            menu.addAction(b.name, lambda bid=b.id: self._create_card(idx, bid))
-        menu.exec(anchor.mapToGlobal(anchor.rect().bottomLeft()))
+            menu.addAction(b.name).setData(b.id)
+        # On agit après la fermeture du menu, pas pendant : créer la carte reconstruit la synthèse,
+        # dont le bouton qui a ouvert ce menu.
+        chosen = menu.exec(anchor.mapToGlobal(anchor.rect().bottomLeft()))
+        if chosen is not None:
+            self._create_card(idx, chosen.data())
 
     def _all_to_board(self) -> None:
         """Pour les calls d'avant l'ajout automatique : toutes les actions manquantes → cartes."""

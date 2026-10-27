@@ -1,6 +1,7 @@
 """Point d'entrée de l'app desktop : `noter-app`."""
 from __future__ import annotations
 
+import faulthandler
 import logging
 import signal
 import sys
@@ -14,6 +15,9 @@ logger = logging.getLogger("noter.ui")
 def main() -> int:
     settings = load_settings()
     setup_logging(settings.log_path, console=False)
+    # Un plantage natif (Qt, audio) ne passe pas par les exceptions Python : faulthandler écrit au moins la
+    # pile Python sur stderr, que Noter.app redirige vers ~/Noter/noter.log.
+    faulthandler.enable()
 
     def _excepthook(exc_type, exc, tb):
         logger.critical("Erreur non rattrapée", exc_info=(exc_type, exc, tb))
@@ -42,12 +46,12 @@ def main() -> int:
 
     theme.load_fonts()
     app.setFont(QFont(theme.SANS, 13))
-    theme.apply(app)
+    theme.set_preference(app, settings.theme)
     icon_path = theme.FONT_DIR.parent / "AppIcon.png"
     if icon_path.exists():
         app.setWindowIcon(QIcon(str(icon_path)))
-    try:  # suivre le passage clair/sombre du système
-        app.styleHints().colorSchemeChanged.connect(lambda _s: theme.apply(app))
+    try:  # suivre le passage clair/sombre du système (en mode automatique seulement)
+        app.styleHints().colorSchemeChanged.connect(lambda _s: theme.system_changed(app))
     except Exception:  # noqa: BLE001
         pass
 

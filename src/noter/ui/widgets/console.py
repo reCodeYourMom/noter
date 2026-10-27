@@ -114,7 +114,7 @@ class RecordingConsole(QWidget):
         wl.setContentsMargins(14, 10, 14, 11)
         wl.setSpacing(10)
         icon = QLabel()
-        icon.setPixmap(icons.icon("alert", t.rec_ink, 16).pixmap(16, 16))
+        icons.bind(icon, "alert", "rec_ink", 16)
         icon.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.sys_warn_text = QLabel("")
         self.sys_warn_text.setObjectName("warn")
@@ -132,11 +132,11 @@ class RecordingConsole(QWidget):
         self.stop.setIcon(icons.icon("stop", "#FFFFFF", 12))
         self.stop.setCursor(Qt.CursorShape.PointingHandCursor)
         self.stop.clicked.connect(self.stop_requested.emit)
-        glow = QGraphicsDropShadowEffect(self.stop)  # halo corail : le seul bouton qui compte pendant un call
-        glow.setBlurRadius(28)
-        glow.setOffset(0, 6)
-        glow.setColor(theme.soft(t.rec, 0.45))
-        self.stop.setGraphicsEffect(glow)
+        self.glow = QGraphicsDropShadowEffect(self.stop)  # halo corail : le seul bouton qui compte pendant un call
+        self.glow.setBlurRadius(28)
+        self.glow.setOffset(0, 6)
+        self.glow.setColor(theme.soft(t.rec, 0.45))
+        self.stop.setGraphicsEffect(self.glow)
         root.addWidget(self.stop, 0, Qt.AlignmentFlag.AlignHCenter)
         root.addSpacing(14)
 
@@ -154,6 +154,11 @@ class RecordingConsole(QWidget):
         self.route: AudioRoute | None = None
         self.with_system = True
         self._sys_peak = 0.0
+        theme.on_change(self._on_theme)
+
+    def _on_theme(self, t) -> None:
+        self.glow.setColor(theme.soft(t.rec, 0.45))
+        self._set_lamp(self._lamp_on)
 
     def _meter_label(self, text: str) -> QLabel:
         lab = QLabel(text)

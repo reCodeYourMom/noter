@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QPoint, Qt, QTimer, Signal
-from PySide6.QtGui import QCursor, QFont
+from PySide6.QtGui import QCursor, QFont, QIcon
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from noter.service import Service
-from noter.ui import icons, theme
+from noter.ui import icons
 from noter.ui.card_dialog import CardDialog
 from noter.ui.widgets.board import AddListColumn, ListColumn, ListStrip
 from noter.ui.widgets.common import tool_button
@@ -41,7 +41,6 @@ class BoardView(QWidget):
         self.repo = service.repo
         self.board_id: int | None = None
         self._dragging = False
-        t = theme.current()
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -61,7 +60,7 @@ class BoardView(QWidget):
         self.filter.setPlaceholderText("Filtrer les cartes")
         self.filter.setClearButtonEnabled(True)
         self.filter.setFixedWidth(220)
-        self.filter.addAction(icons.icon("search", t.ink_3, 14), QLineEdit.ActionPosition.LeadingPosition)
+        icons.bind(self.filter.addAction(QIcon(), QLineEdit.ActionPosition.LeadingPosition), "search", "ink_3", 14)
         self.filter.textChanged.connect(self._apply_filter)
         self.menu_btn = tool_button("more", ghost=True, tip="Actions du board")
         self.menu_btn.clicked.connect(self._open_menu)
@@ -163,10 +162,14 @@ class BoardView(QWidget):
     def _make_column(self) -> ListColumn:
         col = ListColumn(self.repo)
         col.strip = self.strip
-        col.card_open.connect(self.open_card)
+        # Connexions différées : ces actions ouvrent une boucle modale (fiche, confirmation) puis reconstruisent
+        # le board. Lancées depuis le clic, elles détruiraient la carte ou la liste dont le gestionnaire de clic
+        # est encore en cours → plantage natif sous macOS. En file, elles partent une fois le clic terminé.
+        queued = Qt.ConnectionType.QueuedConnection
+        col.card_open.connect(self.open_card, queued)
         col.changed.connect(self._on_changed)
-        col.move_requested.connect(self._move_list)
-        col.delete_requested.connect(self._delete_list)
+        col.move_requested.connect(self._move_list, queued)
+        col.delete_requested.connect(self._delete_list, queued)
         col.drag_started.connect(self._drag_started)
         col.drag_finished.connect(self._drag_finished)
         return col

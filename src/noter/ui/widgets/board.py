@@ -262,14 +262,13 @@ class _AddRow(QWidget):
 
     def __init__(self, button_text: str, placeholder: str, confirm_text: str, multiline: bool, parent=None):
         super().__init__(parent)
-        t = theme.current()
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(6)
         self.button = QToolButton()
         self.button.setObjectName("addCard")
         self.button.setText(" " + button_text)
-        self.button.setIcon(icons.icon("plus", t.ink_3, 14))
+        icons.bind(self.button, "plus", "ink_3", 14)
         self.button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -399,7 +398,6 @@ class ListColumn(QFrame):
         self._max_height = 10_000
         self._mark = QFrame()
         self._mark.setObjectName("dropMark")
-        t = theme.current()
 
         root = QVBoxLayout(self)
         root.setContentsMargins(8, 8, 8, 8)
@@ -422,7 +420,7 @@ class ListColumn(QFrame):
         self.count = QLabel("")
         self.count.setObjectName("listCount")
         self.menu_btn = tool_button("more", ghost=True, tip="Actions de la liste")
-        self.menu_btn.setIcon(icons.icon("more", t.ink_3, 14))
+        icons.bind(self.menu_btn, "more", "ink_3", 14)
         self.menu_btn.clicked.connect(self._open_menu)
         head.addWidget(self.title, 1)
         head.addWidget(self.title_edit, 1)

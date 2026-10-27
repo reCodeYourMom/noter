@@ -450,6 +450,8 @@ def test_action_to_board_and_back(qapp, window, service, monkeypatch):
     assert len(buttons) == 1
     buttons[0].click()
     assert requested == [cards[0].id]
+    assert opened == []  # différé : la fiche (modale) s'ouvre une fois le clic terminé
+    _process(qapp, 50)
     assert opened == [cards[0].id]  # la carte s'ouvre, sur son board
     assert w.workspace.currentWidget() is w.board_view and w.board_view.board_id == board.id
 
@@ -684,3 +686,143 @@ def test_settings_dialog_saves_auto_tasks(qapp, home, settings):
     dlg.auto_tasks.setChecked(True)
     dlg.save()
     assert read_env(home / ".env")["NOTER_AUTO_TASKS"] == "true"
+
+
+
+# ─── Régression : plantage natif à la fermeture d'une fiche de carte ─
+
+
+def test_clicked_card_is_never_destroyed_while_its_click_is_still_running(qapp, board_window, service):
+    """Clic sur une carte → fiche modale → modification → le board se reconstruit.
+
+    Avant correction, la fiche s'ouvrait PENDANT le traitement du clic : la reconstruction détruisait la carte
+    cliquée, puis Qt revenait dans un objet libéré à la fermeture → « Python quit unexpectedly » sur macOS.
+    """
+    from PySide6.QtCore import QPoint, Qt, QTimer
+    from PySide6.QtTest import QTest
+
+    w, board, lists, cards = board_window
+    tile = w.board_view.strip.columns[0].tiles()[0]
+    click_done = [False]
+    destroyed_mid_click = []
+    tile.destroyed.connect(lambda *_: destroyed_mid_click.append(not click_done[0]))
+    seen = []
+
+    def in_dialog():
+        dlg = qapp.activeModalWidget()
+        if dlg is None:  # pas encore ouverte : on repasse
+            QTimer.singleShot(20, in_dialog)
+            return
+        seen.append(type(dlg).__name__)
+        dlg.label_buttons["red"].setChecked(True)  # → sauvegarde → le board se reconstruit sous la fiche
+        w._schedule_refresh()  # et le rafraîchissement global aussi, comme à la fin d'un job
+        QTimer.singleShot(400, dlg.accept)
+
+    QTimer.singleShot(20, in_dialog)
+    QTest.mouseClick(tile, Qt.MouseButton.LeftButton, pos=QPoint(20, 12))
+    click_done[0] = True
+    assert seen == []  # la fiche ne s'est pas ouverte dans le gestionnaire du clic
+    _process(qapp, 900)
+    assert seen == ["CardDialog"]
+    assert service.repo.get_card(cards[0].id).labels == ["red"]
+    assert destroyed_mid_click in ([], [False])  # détruite éventuellement, mais jamais au milieu de son clic
+
+
+def test_list_menu_actions_run_after_the_menu_and_click_are_done(qapp, board_window, service, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    w, board, lists, cards = board_window
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
+    col = w.board_view.strip.columns[0]
+    col.delete_requested.emit(col.list.id)  # ce que fait « Supprimer la liste… » dans le menu de la liste
+    assert service.repo.get_list(lists[0].id) is not None  # rien pendant le menu : la colonne y est encore utilisée
+    _process(qapp, 50)
+    assert service.repo.get_list(lists[0].id) is None and len(w.board_view.strip.columns) == 2
+
+
+def test_action_board_menu_creates_the_card_after_the_menu_closes(qapp, window, service, monkeypatch):
+    from PySide6.QtWidgets import QMenu, QToolButton
+
+    w, rec = window
+    service.create_board("Perso")
+    pro = service.create_board("Pro")
+    w.detail._fill_summary()
+    btn = next(b for b in w.detail.summary_box.findChildren(QToolButton) if b.toolTip().startswith("Ajouter aux tâches"))
+    class PickPro(QMenu):  # menu qui « choisit » Pro sans ouvrir de boucle modale
+        def exec(self, *_a):
+            return next(a for a in self.actions() if a.text() == "Pro")
+
+    monkeypatch.setattr("noter.ui.detail.QMenu", PickPro)
+    btn.click()
+    cards = service.repo.cards_for_recording(rec.id)
+    assert len(cards) == 1 and service.repo.board_of_card(cards[0].id).id == pro.id
+
+
+# ─── Thème : Automatique / Clair / Sombre, appliqué sans redémarrer ─
+
+
+@pytest.fixture
+def restore_theme(qapp):
+    yield
+    theme.set_preference(qapp, "light")  # les autres tests attendent le thème clair
+
+
+def test_theme_preference_and_listeners(qapp, restore_theme):
+    from noter.config import Settings
+
+    assert Settings(theme=" Dark ").theme == "dark" and Settings(theme="rose").theme == "auto"
+    seen = []
+
+    class Watcher:
+        def on_theme(self, t):
+            seen.append(t.name)
+
+    watcher = Watcher()
+    theme.on_change(watcher.on_theme)
+    assert theme.set_preference(qapp, "dark").is_dark and theme.preference() == "dark"
+    assert theme.current() is theme.DARK and seen == ["dark"]
+    theme.system_changed(qapp)  # macOS change d'apparence : ignoré, l'utilisateur a fixé « Sombre »
+    assert theme.current() is theme.DARK and seen == ["dark"]
+    theme.set_preference(qapp, "n'importe quoi")  # valeur inconnue → automatique (ici : système clair)
+    assert theme.preference() == "auto" and seen == ["dark", "light"]
+    del watcher  # référence faible : un widget disparu n'est plus appelé
+    theme.set_preference(qapp, "dark")
+    assert seen == ["dark", "light"]
+
+
+def test_switching_theme_live_recolors_the_window(qapp, window, restore_theme):
+    from noter.ui import icons
+
+    w, rec = window
+    theme.set_preference(qapp, "light")
+    dark = theme.DARK
+    theme.set_preference(qapp, "dark")
+    _process(qapp, 50)
+    # Icônes liées au thème (recherche, import, outils de la fiche)
+    search_icon = w.search.actions()[0].icon()
+    assert search_icon.cacheKey() == icons.icon("search", dark.ink_3, 14).cacheKey()
+    assert w.rail.import_btn.icon().cacheKey() == icons.icon("import", dark.ink_2, 16).cacheKey()
+    assert w.detail.btn_folder.icon().cacheKey() == icons.icon("folder", dark.ink_2, 14).cacheKey()
+    # Éléments reconstruits : rail (item sélectionné), titre de section, console
+    selected = next(it for it in w.rail._items if it.isChecked())
+    assert dark.accent_ink in selected.lab.styleSheet()
+    assert dark.accent in w.detail.transcript_label.text()
+    assert w.console.glow.color() == theme.soft(dark.rec, 0.45)
+    assert dark.canvas in qapp.styleSheet()
+    # Et retour au clair, toujours sans redémarrer
+    theme.set_preference(qapp, "light")
+    assert w.search.actions()[0].icon().cacheKey() == icons.icon("search", theme.LIGHT.ink_3, 14).cacheKey()
+
+
+def test_settings_offer_the_theme_and_apply_it_immediately(qapp, window, home, settings, restore_theme):
+    from noter.ui.settings_dialog import SettingsDialog
+
+    w, rec = window
+    dlg = SettingsDialog(settings)
+    assert [dlg.appearance.itemData(i) for i in range(dlg.appearance.count())] == ["auto", "light", "dark"]
+    dlg.appearance.setCurrentIndex(dlg.appearance.findData("dark"))
+    dlg.save()
+    assert read_env(home / ".env")["NOTER_THEME"] == "dark"
+    w.settings_saved(dlg.values())
+    assert theme.current() is theme.DARK and w.service.settings.theme == "dark"
+    assert "apparence appliquée" in w.statusBar().currentMessage()

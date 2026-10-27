@@ -67,3 +67,48 @@ def icon(name: str, color: str | QColor, size: int = 16) -> QIcon:
         ic.addPixmap(pm)
     _cache[key] = ic
     return ic
+
+
+# ─── Icônes qui suivent le thème ────────────────────────────────────
+
+_bound: dict[int, tuple[object, str, str, int]] = {}
+
+
+def bind(target, name: str, token: str, size: int = 16):
+    """Pose l'icône `name` dans la couleur du token `token` (ex. "ink_3") et la repose à chaque changement
+    de thème. `target` : bouton ou QAction (setIcon), ou QLabel (setPixmap). Retourne `target`."""
+    from noter.ui import theme
+
+    _set(target, name, getattr(theme.current(), token), size)
+    key = id(target)
+    if key not in _bound and hasattr(target, "destroyed"):
+        target.destroyed.connect(lambda *_a, k=key: _bound.pop(k, None))
+    _bound[key] = (target, name, token, size)
+    return target
+
+
+def _set(target, name: str, color: str, size: int) -> None:
+    ic = icon(name, color, size)
+    if hasattr(target, "setIcon"):
+        target.setIcon(ic)
+    else:
+        target.setPixmap(ic.pixmap(size, size))
+
+
+def _rebind(tokens) -> None:
+    import shiboken6
+
+    for key, (target, name, token, size) in list(_bound.items()):
+        if not shiboken6.isValid(target):
+            _bound.pop(key, None)
+            continue
+        _set(target, name, getattr(tokens, token), size)
+
+
+def _register() -> None:
+    from noter.ui import theme
+
+    theme.on_change(_rebind)
+
+
+_register()

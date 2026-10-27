@@ -60,7 +60,7 @@ noter doctor
 - **Tâches** : des boards façon Trello, directement dans l'app (voir ci-dessous).
 - **Recherche** plein texte dans transcripts, résumés et titres ; un résultat ouvre la fiche au bon passage, les occurrences sont marquées sur la timeline.
 - **Import** par bouton ou glisser-déposer. **Réglages** (clé API, modèles, langue) dans `~/Noter/.env`.
-- Thème clair ou sombre selon le système, typographie IBM Plex (sans et mono) et **trois couleurs**, chacune avec un rôle :
+- Thème **Automatique** (suit macOS), **Clair** ou **Sombre**, au choix dans les Réglages et appliqué tout de suite sans redémarrer ; typographie IBM Plex (sans et mono) et **trois couleurs**, chacune avec un rôle :
   - **iris** (violet) : la marque, les actions, la sélection, les traitements en cours ;
   - **corail** : le REC, les retards, les erreurs ;
   - **menthe** : ce qui est prêt ou terminé.
@@ -109,6 +109,7 @@ Les IDs acceptent un préfixe (les 8 premiers caractères suffisent).
 | `NOTER_CLAUDE_EFFORT` | `medium` | `low` / `medium` / `high` |
 | `NOTER_WHISPER_MODEL` | `large-v3` | `tiny` … `large-v3`, `large-v3-turbo` |
 | `NOTER_WHISPER_LANGUAGE` | auto | forcer `fr`, `en`… |
+| `NOTER_THEME` | `auto` | apparence : `auto` (suit macOS), `light` ou `dark` |
 | `NOTER_AUTO_SUMMARIZE` | `true` | résumer automatiquement après transcription |
 | `NOTER_AUTO_TASKS` | `true` | à la fin d'un résumé, une carte par action dans le premier board |
 | `NOTER_DIARIZE` | `false` | diarisation pyannote (nécessite `HF_TOKEN`) |
