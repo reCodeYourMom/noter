@@ -179,3 +179,80 @@ def test_mlx_engine_omits_empty_language(tmp_path, monkeypatch):
     assert "language" not in calls and res.segments[0].text == "Salut"
     MlxWhisperEngine("large-v3-turbo").transcribe(make_wav(tmp_path / "m.wav"), language="fr")
     assert calls["language"] == "fr"
+
+
+# ─── Périphériques : écouteurs, sortie, BlackHole ───────────────────
+
+
+def test_multi_output_heuristic_and_route_description():
+    from noter.audio.devices import AudioRoute, looks_like_multi_output
+
+    for name in ("Multi-Output Device", "Périphérique à sorties multiples", "Appareil agrégé", "BlackHole 2ch"):
+        assert looks_like_multi_output(name)
+    for name in ("AirPods Pro de Nassim", "Haut-parleurs MacBook Pro", "", None):
+        assert not looks_like_multi_output(name)
+
+    ok = AudioRoute(mic="MacBook Pro Microphone", output="Périphérique à sorties multiples", system="BlackHole 2ch", wanted_system=True)
+    assert not ok.output_suspect and not ok.system_missing
+    assert ok.describe() == "Micro : MacBook Pro Microphone · Sortie : Périphérique à sorties multiples · audio système via BlackHole 2ch"
+
+    airpods = AudioRoute(mic="AirPods Pro", output="AirPods Pro", system="BlackHole 2ch", wanted_system=True)
+    assert airpods.output_suspect  # le son du call part dans les écouteurs, pas dans BlackHole
+
+    no_bh = AudioRoute(mic="MacBook Pro Microphone", output="AirPods Pro", system=None, wanted_system=True)
+    assert no_bh.system_missing and not no_bh.output_suspect
+    assert no_bh.describe().endswith("micro seul (BlackHole absent)")
+
+    mic_only = AudioRoute(mic="MacBook Pro Microphone", output="AirPods Pro", system=None, wanted_system=False)
+    assert not mic_only.system_missing and not mic_only.output_suspect  # réunion physique : rien à signaler
+
+
+def test_refresh_reinitialises_portaudio(monkeypatch):
+    from noter.audio import devices
+
+    calls = []
+
+    class FakeSD:
+        _initialized = 1
+
+        @staticmethod
+        def _terminate():
+            calls.append("terminate")
+
+        @staticmethod
+        def _initialize():
+            calls.append("initialize")
+
+    monkeypatch.setattr(devices, "_sd", lambda: FakeSD)
+    devices.refresh()
+    assert calls == ["terminate", "initialize"]
+
+    class Broken(FakeSD):
+        @staticmethod
+        def _initialize():
+            raise OSError("PortAudio indisponible")
+
+    monkeypatch.setattr(devices, "_sd", lambda: Broken)
+    devices.refresh()  # ne plante pas : on garde l'ancienne liste
+
+
+def test_recorder_start_rereads_devices_and_records_the_route(tmp_path, monkeypatch):
+    from noter.audio import recorder as rec_mod
+    from noter.audio.devices import AudioDevice
+
+    events = []
+    mic = AudioDevice(0, "AirPods Pro", 1, 24000.0)
+    bh = AudioDevice(3, "BlackHole 2ch", 2, 48000.0)
+    monkeypatch.setattr(rec_mod, "refresh", lambda: events.append("refresh"))
+    monkeypatch.setattr(rec_mod, "default_mic", lambda: events.append("mic") or mic)
+    monkeypatch.setattr(rec_mod, "find_blackhole", lambda: bh)
+    monkeypatch.setattr(rec_mod, "default_output_name", lambda: "AirPods Pro")
+    monkeypatch.setattr(rec_mod, "supported_samplerate", lambda d, wanted: int(d.default_samplerate))
+    monkeypatch.setattr(rec_mod.Recorder, "_run_stream", lambda self, s: None)  # pas de vrai flux audio
+
+    r = rec_mod.Recorder(tmp_path / "rec", with_system_audio=True)
+    r.start()
+    r.stop()
+    assert events[:2] == ["refresh", "mic"]  # la liste est relue AVANT de choisir le micro
+    assert r.route.mic == "AirPods Pro" and r.route.system == "BlackHole 2ch" and r.route.output == "AirPods Pro"
+    assert r.route.output_suspect

@@ -608,3 +608,48 @@ def test_cards_and_list_titles_are_hit_by_the_mouse(qapp, board_window):
         assert hit is tile and isinstance(hit, CardTile)
     title = col.title
     assert qapp.widgetAt(title.mapToGlobal(title.rect().center())) is title
+
+
+def test_console_warns_when_system_audio_cannot_arrive(qapp):
+    from datetime import datetime
+    from pathlib import Path
+
+    from noter.audio.devices import AudioRoute
+    from noter.models import Recording, Source
+    from noter.ui.widgets.console import RecordingConsole
+
+    c = RecordingConsole()
+    rec = Recording(id="x", source=Source.MAC_SYSTEM_MIC, status=RecordingStatus.RECORDING,
+                    started_at=datetime.now(), audio_path=Path("/x"), dir_path=Path("/x"))
+
+    # Sortie = AirPods : avertissement immédiat, qui disparaît dès que du son système arrive
+    airpods = AudioRoute(mic="AirPods Pro", output="AirPods Pro", system="BlackHole 2ch", wanted_system=True)
+    c.begin(rec, "", True, airpods)
+    assert c.source.text().startswith("Micro : AirPods Pro · Sortie : AirPods Pro")
+    assert not c.sys_warn.isHidden() and "« AirPods Pro »" in c.sys_warn_text.text()
+    c.tick(2.0, {"MIC": 0.05, "SYS": 0.0})
+    assert not c.sys_warn.isHidden()
+    c.tick(3.0, {"MIC": 0.05, "SYS": 0.03})  # l'utilisateur a corrigé sa sortie en plein call
+    assert c.sys_warn.isHidden()
+    c.tick(4.0, {"MIC": 0.05, "SYS": 0.0})  # un blanc ensuite n'est pas une erreur
+    assert c.sys_warn.isHidden()
+
+    # Bonne sortie : on laisse 20 s aux autres pour parler avant de s'inquiéter
+    ok = AudioRoute(mic="MacBook Pro Microphone", output="Périphérique à sorties multiples", system="BlackHole 2ch", wanted_system=True)
+    c.begin(rec, "", True, ok)
+    assert c.sys_warn.isHidden()
+    c.tick(10.0, {"MIC": 0.05, "SYS": 0.0})
+    assert c.sys_warn.isHidden()
+    c.tick(21.0, {"MIC": 0.05, "SYS": 0.0})
+    assert not c.sys_warn.isHidden() and "Aucun son système depuis 20 s" in c.sys_warn_text.text()
+
+    # BlackHole absent : le dire, durablement
+    c.begin(rec, "", False, AudioRoute(mic="MacBook Pro Microphone", output="AirPods Pro", system=None, wanted_system=True))
+    assert not c.sys_warn.isHidden() and "BlackHole n’est pas installé" in c.sys_warn_text.text()
+    c.tick(30.0, {"MIC": 0.05})
+    assert not c.sys_warn.isHidden()
+
+    # Micro seul (réunion physique) : rien à signaler
+    c.begin(rec, "Micro seul", False, AudioRoute(mic="MacBook Pro Microphone", output="AirPods Pro", system=None, wanted_system=False))
+    c.tick(30.0, {"MIC": 0.05})
+    assert c.sys_warn.isHidden()

@@ -257,6 +257,8 @@ QLabel#gen {{ color: {t.ink_4}; font-size: 11px; }}
 QLabel#lamp {{ color: {t.rec_ink}; font-size: 12px; font-weight: 600; letter-spacing: 3px; }}
 QLabel#timecode {{ color: {t.ink}; font-family: "{MONO}"; font-size: 72px; font-weight: 500; letter-spacing: -2px; }}
 QLabel#error {{ color: {t.rec_ink}; }}
+QFrame#warnCard {{ background: {t.rec_soft}; border-radius: 12px; }}
+QLabel#warn {{ color: {t.ink}; font-size: 12px; background: transparent; }}
 QLabel#groupHeader {{ color: {t.ink_3}; font-size: 11px; font-weight: 600; letter-spacing: 1px; }}
 
 /* Champs */

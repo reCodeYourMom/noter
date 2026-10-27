@@ -51,6 +51,14 @@ def record(
     svc = _service()
     rec = svc.start_recording(with_system_audio=not mic_only, title=title, project=project, tags=tag or [])
     console.print(f"[green bold]● REC[/] {rec.display_title}  [dim]{rec.short_id} · {rec.source}[/]")
+    route = svc.recorder.route if svc.recorder else None
+    if route:
+        console.print(f"[dim]{route.describe()}[/]")
+        if route.system_missing:
+            console.print("[yellow]BlackHole absent : seul ton micro est enregistré (brew install blackhole-2ch).[/]")
+        elif route.output_suspect:
+            console.print(f"[yellow]Sortie « {route.output} » : le son des autres n'arrivera sans doute pas à BlackHole. "
+                          "Choisis ton périphérique à sorties multiples (BlackHole + écouteurs).[/]")
     console.print("[dim]Ctrl+C pour arrêter[/]")
 
     stop = {"flag": False}

@@ -377,8 +377,9 @@ class MainWindow(QMainWindow):
         self.btn_record.setEnabled(False)
         self.a_record.setEnabled(False)
         self.a_record_mic.setEnabled(False)
-        with_sys = "system" in str(rec.source)
-        self.console.begin(rec, "Micro + audio système (BlackHole)" if with_sys else "Micro seul", with_sys)
+        route = self.service.recorder.route if self.service.recorder else None
+        with_sys = route.system is not None if route else "system" in str(rec.source)
+        self.console.begin(rec, "Micro + audio système (BlackHole)" if with_sys else "Micro seul", with_sys, route)
         self.main_stack.setCurrentWidget(self.console)
         self.refresh()
         row = self.list_model.row_of(rec.id)

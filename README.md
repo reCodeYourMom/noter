@@ -29,6 +29,17 @@ git clone <ce-repo> noter && cd noter
 
 Le script installe Homebrew, Python 3.11+, ffmpeg, BlackHole, crée le venv, puis `~/Noter/.env` (clé API) et propose le lancement au login. Pour l'audio système, crée ensuite un **périphérique à sorties multiples** dans *Configuration audio et MIDI* (BlackHole 2ch + ton casque) et utilise-le comme sortie pendant les calls.
 
+### Avec des écouteurs
+
+Ta voix passe toujours par le micro par défaut du Mac. Pour enregistrer **aussi la voix des autres**, la sortie audio doit être le **périphérique à sorties multiples** (BlackHole 2ch + tes écouteurs), pas directement « AirPods » ou « Casque ». Sinon le son part dans tes oreilles et BlackHole ne reçoit rien.
+
+La console d'enregistrement affiche le micro et la sortie utilisés, et prévient :
+- tout de suite si la sortie ne ressemble pas à un périphérique à sorties multiples ;
+- au bout de 20 s sans aucun son système ;
+- si BlackHole n'est pas installé.
+
+L'avertissement disparaît dès que le son des autres arrive. Tu peux changer de sortie en plein call. La liste des périphériques est relue à chaque enregistrement : des écouteurs branchés après le lancement de Noter sont pris en compte. Avec des AirPods, préfère le micro du Mac en entrée : le micro Bluetooth fait passer le son en qualité « appel ».
+
 Installation manuelle :
 
 ```bash
