@@ -599,9 +599,9 @@ class ListColumn(QFrame):
         return lay_index, logical
 
     def _remove_mark(self) -> None:
-        if self._mark.parent() is not None:
+        if self.cards_lay.indexOf(self._mark) >= 0:
             self.cards_lay.removeWidget(self._mark)
-            self._mark.setParent(None)
+            self._mark.hide()  # pas de setParent(None) : voir clear_layout
 
     def _dragged_card(self, e) -> int | None:
         md = e.mimeData()
@@ -713,9 +713,9 @@ class ListStrip(QWidget):
             return None
 
     def _remove_mark(self) -> None:
-        if self._mark.parent() is not None:
+        if self.lay.indexOf(self._mark) >= 0:
             self.lay.removeWidget(self._mark)
-            self._mark.setParent(None)
+            self._mark.hide()  # pas de setParent(None) : voir clear_layout
 
     def list_drag_move(self, pos: QPoint, e) -> None:
         dragged = self._dragged(e)

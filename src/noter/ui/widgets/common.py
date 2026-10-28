@@ -18,8 +18,9 @@ def clear_layout(lay) -> None:
         it = lay.takeAt(0)
         w = it.widget()
         if w is not None:
+            # Jamais setParent(None) : un widget sans parent est une fenêtre de premier niveau, et sur macOS
+            # la créer fait sortir la fenêtre plein écran de son Space (retour au bureau).
             w.hide()
-            w.setParent(None)
             w.deleteLater()
         elif it.layout() is not None:
             clear_layout(it.layout())
