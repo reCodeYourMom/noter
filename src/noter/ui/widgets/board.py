@@ -153,7 +153,9 @@ class CardTile(QFrame):
         # Le rond « Terminer » n'apparaît qu'au survol (toujours visible une fois la carte terminée), comme sur Trello.
         title_row = QHBoxLayout()
         title_row.setSpacing(8)
-        self.done_toggle = DoneToggle()
+        # Parenté dès la création : setVisible(True) sur un widget sans parent ouvrirait une fenêtre de premier
+        # niveau, ce qui sort la fenêtre plein écran de son Space sur macOS.
+        self.done_toggle = DoneToggle(parent=self)
         self.done_toggle.setChecked(card.done)
         self.done_toggle.setVisible(card.done)
         self.done_toggle.toggled.connect(lambda checked: self.done_toggled.emit(self.card.id, checked))
