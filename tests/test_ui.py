@@ -527,6 +527,25 @@ def test_calendar_popup_follows_theme(qapp):
         theme.apply(qapp, dark=False)
 
 
+def test_sort_lists_by_due_from_the_board(qapp, board_window, service):
+    from datetime import date
+
+    w, board, lists, cards = board_window
+    alpha, bravo, charlie = cards
+    service.repo.update_card(alpha.id, due=date(2026, 7, 1))
+    service.repo.update_card(charlie.id, due=date(2026, 6, 1))
+    w.board_view.refresh()
+    col = w.board_view.strip.columns[0]
+    col.sort_requested.emit(lists[0].id)
+    for _ in range(5):
+        qapp.processEvents()
+    assert [t.card.title for t in col.tiles()] == ["charlie", "alpha", "bravo"]
+
+    service.repo.move_card(charlie.id, lists[0].id, 2)
+    w.board_view._sort_all_lists()
+    assert [c.title for c in service.repo.cards_in_list(lists[0].id)] == ["charlie", "alpha", "bravo"]
+
+
 def test_filter_hides_non_matching_cards(qapp, board_window, service):
     w, board, lists, cards = board_window
     service.repo.update_card(cards[1].id, labels=["purple"])

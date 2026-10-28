@@ -170,6 +170,7 @@ class BoardView(QWidget):
         col.card_done.connect(self._set_card_done, queued)
         col.changed.connect(self._on_changed)
         col.move_requested.connect(self._move_list, queued)
+        col.sort_requested.connect(self._sort_list, queued)
         col.delete_requested.connect(self._delete_list, queued)
         col.drag_started.connect(self._drag_started)
         col.drag_finished.connect(self._drag_finished)
@@ -238,6 +239,16 @@ class BoardView(QWidget):
             self.repo.move_list(list_id, max(0, min(len(ids) - 1, ids.index(list_id) + delta)))
             self._on_changed()
 
+    def _sort_list(self, list_id: int) -> None:
+        self.repo.sort_list_by_due(list_id)
+        self._on_changed()
+
+    def _sort_all_lists(self) -> None:
+        if self.board_id is not None:
+            for lst in self.repo.get_lists(self.board_id):
+                self.repo.sort_list_by_due(lst.id)
+            self._on_changed()
+
     def _delete_list(self, list_id: int) -> None:
         lst = self.repo.get_list(list_id)
         if lst is None:
@@ -262,6 +273,7 @@ class BoardView(QWidget):
     def _open_menu(self) -> None:
         menu = QMenu(self)
         menu.addAction("Ajouter une liste", self.tail.open)
+        menu.addAction("Trier toutes les listes par échéance", self._sort_all_lists)
         menu.addSeparator()
         menu.addAction("Supprimer le board…", self._delete_board)
         menu.exec(self.menu_btn.mapToGlobal(self.menu_btn.rect().bottomLeft()))

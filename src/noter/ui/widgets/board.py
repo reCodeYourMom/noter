@@ -404,6 +404,7 @@ class ListColumn(QFrame):
     drag_finished = Signal()
     move_requested = Signal(int, int)  # list_id, delta (-1 / +1)
     delete_requested = Signal(int)
+    sort_requested = Signal(int)  # list_id : trier par échéance
 
     def __init__(self, repo: Repository, parent=None):
         super().__init__(parent)
@@ -555,6 +556,7 @@ class ListColumn(QFrame):
         menu = QMenu(self)
         menu.addAction("Ajouter une carte", self.open_composer)
         menu.addAction("Renommer la liste", self._begin_rename)
+        menu.addAction("Trier par échéance", lambda: self.sort_requested.emit(self.list.id))  # type: ignore[union-attr]
         menu.addSeparator()
         menu.addAction("Déplacer à gauche", lambda: self.move_requested.emit(self.list.id, -1))  # type: ignore[union-attr]
         menu.addAction("Déplacer à droite", lambda: self.move_requested.emit(self.list.id, +1))  # type: ignore[union-attr]

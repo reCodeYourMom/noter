@@ -278,3 +278,20 @@ def test_board_deletions_cascade_but_keep_recordings(home):
     assert repo.cards_in_list(doing.id) == []
     repo.delete_board(board.id)
     assert repo.list_boards() == [] and repo.get_lists(board.id) == []
+
+
+def test_sort_list_by_due_puts_undated_last_and_is_stable(home):
+    from datetime import date
+
+    repo = Repository(Database(home / "noter.db"))
+    board = repo.create_board("B")
+    lst = repo.create_list(board.id, "L")
+    other = repo.create_list(board.id, "Autre")
+    a, b, c, d, e = (repo.create_card(lst.id, t) for t in "abcde")
+    x = repo.create_card(other.id, "x")
+    repo.update_card(a.id, due=date(2026, 5, 3))
+    repo.update_card(c.id, due=date(2026, 5, 1))
+    repo.update_card(e.id, due=date(2026, 5, 3))  # même jour que « a » : l'ordre existant est gardé
+    repo.sort_list_by_due(lst.id)
+    assert [k.title for k in repo.cards_in_list(lst.id)] == ["c", "a", "e", "b", "d"]
+    assert [k.title for k in repo.cards_in_list(other.id)] == ["x"] and x.id

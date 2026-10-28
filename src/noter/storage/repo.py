@@ -496,6 +496,13 @@ class Repository:
             if source != list_id:
                 _renumber_cards(conn, source)
 
+    def sort_list_by_due(self, list_id: int) -> None:
+        """Réordonne la liste par échéance croissante ; les cartes sans échéance passent après, dans leur ordre."""
+        with self.db.tx() as conn:
+            rows = conn.execute("SELECT id, due FROM cards WHERE list_id = ? ORDER BY position, id", (list_id,)).fetchall()
+            ordered = sorted(rows, key=lambda r: (not r["due"], r["due"] or ""))  # tri stable : ISO 8601 se compare en texte
+            _renumber_cards(conn, list_id, [r["id"] for r in ordered])
+
     def delete_card(self, card_id: int) -> None:
         with self.db.tx() as conn:
             row = conn.execute("SELECT list_id FROM cards WHERE id = ?", (card_id,)).fetchone()
