@@ -167,6 +167,7 @@ class BoardView(QWidget):
         # est encore en cours → plantage natif sous macOS. En file, elles partent une fois le clic terminé.
         queued = Qt.ConnectionType.QueuedConnection
         col.card_open.connect(self.open_card, queued)
+        col.card_done.connect(self._set_card_done, queued)
         col.changed.connect(self._on_changed)
         col.move_requested.connect(self._move_list, queued)
         col.delete_requested.connect(self._delete_list, queued)
@@ -281,6 +282,10 @@ class BoardView(QWidget):
             col.apply_filter(text)
 
     # ─── Cartes ─────────────────────────────────────────────────────
+
+    def _set_card_done(self, card_id: int, done: bool) -> None:
+        self.repo.update_card(card_id, done=done)
+        self._on_changed()
 
     def open_card(self, card_id: int) -> None:
         dlg = CardDialog(self.repo, card_id, self)

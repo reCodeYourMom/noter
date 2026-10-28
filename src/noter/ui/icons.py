@@ -31,6 +31,8 @@ PATHS: dict[str, str] = {
     "calendar": '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
     "text": '<path d="M4 6h16M4 12h16M4 18h9"/>',
     "chevron": '<path d="M6 9l6 6 6-6"/>',
+    "chevron_left": '<path d="M15 6l-6 6 6 6"/>',
+    "chevron_right": '<path d="M9 6l6 6-6 6"/>',
     "sparkle": '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>',
     "flag": '<path d="M5 21V4h11l-2 4 2 4H5"/>',
     "wave": '<path d="M3 12h2M7 8v8M11 5v14M15 9v6M19 11v2"/>',

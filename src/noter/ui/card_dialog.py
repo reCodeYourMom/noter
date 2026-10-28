@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import date
 
 from PySide6.QtCore import QDate, Qt, QTimer, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QTextCharFormat
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -28,7 +28,23 @@ from PySide6.QtWidgets import (
 from noter.models import LABEL_KEYS, LABEL_NAMES_FR, Card, ChecklistItem
 from noter.storage.repo import Repository
 from noter.ui import icons, theme
-from noter.ui.widgets.common import clear_layout, section_label, tool_button
+from noter.ui.widgets.common import DoneToggle, clear_layout, section_label, tool_button
+
+
+def _style_calendar(edit: QDateEdit) -> None:
+    """Le calendrier déroulant suit le thème (clair ou sombre) au lieu de garder les couleurs du système."""
+    t = theme.current()
+    cal = edit.calendarWidget()
+    header = QTextCharFormat()
+    header.setForeground(theme.qcolor(t.ink_3))
+    header.setBackground(theme.qcolor(t.panel))
+    cal.setHeaderTextFormat(header)
+    for days, color in ((range(1, 6), t.ink), (range(6, 8), t.rec_ink)):
+        fmt = QTextCharFormat()
+        fmt.setForeground(theme.qcolor(color))
+        for d in days:
+            cal.setWeekdayTextFormat(Qt.DayOfWeek(d), fmt)
+    cal.setVerticalHeaderFormat(cal.VerticalHeaderFormat.NoVerticalHeader)
 
 
 class CardDialog(QDialog):
@@ -41,6 +57,7 @@ class CardDialog(QDialog):
         self.card_id = card_id
         self._loading = True
         self._deleted = False
+        self._title_dirty = False  # titre saisi mais pas encore enregistré
         card = repo.get_card(card_id)
         if card is None:
             raise ValueError(f"Carte {card_id} introuvable")
@@ -62,14 +79,22 @@ class CardDialog(QDialog):
         # ─── Colonne principale ─────────────────────────────────
         main = QVBoxLayout()
         main.setSpacing(8)
+        head = QHBoxLayout()
+        head.setSpacing(10)
+        self.done_toggle = DoneToggle(22)
+        self.done_toggle.toggled.connect(self._save_done)
         self.title_edit = QLineEdit()
         self.title_edit.setObjectName("titleEdit")
         f = QFont()
         f.setPixelSize(22)
         f.setWeight(QFont.Weight.DemiBold)
         self.title_edit.setFont(f)
+        self.title_edit.textEdited.connect(self._title_typed)
         self.title_edit.editingFinished.connect(self._save_title)
-        main.addWidget(self.title_edit)
+        self.title_edit.returnPressed.connect(self.title_edit.clearFocus)  # Entrée valide la saisie, rien d'autre
+        head.addWidget(self.done_toggle)
+        head.addWidget(self.title_edit, 1)
+        main.addLayout(head)
         self.where = QLabel("")
         self.where.setObjectName("meta")
         main.addWidget(self.where)
@@ -108,11 +133,9 @@ class CardDialog(QDialog):
         self.due_edit.setDisplayFormat("dd/MM/yyyy")
         self.due_edit.setDate(QDate.currentDate())
         self.due_edit.dateChanged.connect(lambda _d: self._save_due())
-        self.due_done = QCheckBox("Terminée")
-        self.due_done.toggled.connect(self._save_due)
+        _style_calendar(self.due_edit)
         row.addWidget(self.has_due)
         row.addWidget(self.due_edit)
-        row.addWidget(self.due_done)
         row.addStretch()
         main.addLayout(row)
 
@@ -181,6 +204,11 @@ class CardDialog(QDialog):
         side.setContentsMargins(0, 0, 0, 0)
         root.addWidget(side_w)
 
+        # Entrée ne doit jamais « cliquer » un bouton par défaut (Ouvrir l'enregistrement, Fermer…).
+        for button in self.findChildren(QPushButton):
+            button.setAutoDefault(False)
+            button.setDefault(False)
+
         self._load()
         self._loading = False
 
@@ -189,7 +217,9 @@ class CardDialog(QDialog):
     def _load(self) -> None:
         was, self._loading = self._loading, True
         c = self.card
-        self.title_edit.setText(c.title)
+        # Un titre en cours de saisie (pas encore enregistré) ne doit pas être écrasé par un rechargement.
+        if not self._title_dirty:
+            self.title_edit.setText(c.title)
         board = self.repo.board_of_card(c.id)
         lists = self.repo.get_lists(board.id) if board else []
         current = next((lst for lst in lists if lst.id == c.list_id), None)
@@ -200,8 +230,7 @@ class CardDialog(QDialog):
         if c.due:
             self.due_edit.setDate(QDate(c.due.year, c.due.month, c.due.day))
         self.due_edit.setEnabled(c.due is not None)
-        self.due_done.setEnabled(c.due is not None)
-        self.due_done.setChecked(c.done)
+        self.done_toggle.setChecked(c.done)
         # Une description en cours de saisie (pas encore enregistrée) ne doit pas être écrasée par un rechargement.
         if not self._desc_timer.isActive() and self.desc.toPlainText() != c.description:
             self.desc.setPlainText(c.description)
@@ -248,12 +277,26 @@ class CardDialog(QDialog):
     def _update(self, **fields) -> None:
         if self._loading or self._deleted:
             return
+        pending = self._pending_title()
+        if pending is not None and "title" not in fields:
+            fields["title"] = pending  # un titre tapé part avec toute autre modification, au lieu d'être écrasé
         self.repo.update_card(self.card_id, **fields)
         self._reload()
         self.changed.emit()
 
+    def _title_typed(self, _text: str) -> None:
+        self._title_dirty = True
+
+    def _pending_title(self) -> str | None:
+        """Le titre saisi et pas encore enregistré, s'il est valide et différent de celui de la carte."""
+        if not self._title_dirty:
+            return None
+        title = self.title_edit.text().strip()
+        return title if title and title != self.card.title else None
+
     def _save_title(self) -> None:
         title = self.title_edit.text().strip()
+        self._title_dirty = False
         if not title:
             self.title_edit.setText(self.card.title)
         elif title != self.card.title:
@@ -268,10 +311,13 @@ class CardDialog(QDialog):
         if self._loading:
             return
         if not self.has_due.isChecked():
-            self._update(due=None, done=False)
+            self._update(due=None)
             return
         d = self.due_edit.date()
-        self._update(due=date(d.year(), d.month(), d.day()), done=self.due_done.isChecked())
+        self._update(due=date(d.year(), d.month(), d.day()))
+
+    def _save_done(self, done: bool) -> None:
+        self._update(done=done)
 
     def _desc_dirty(self) -> None:
         if not self._loading:

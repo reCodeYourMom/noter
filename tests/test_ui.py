@@ -379,7 +379,7 @@ def test_card_dialog_edits_are_saved(qapp, board_window, service, monkeypatch):
     dlg.label_buttons["blue"].setChecked(True)
     dlg.has_due.setChecked(True)
     dlg.due_edit.setDate(QDate(2026, 6, 15))
-    dlg.due_done.setChecked(True)
+    dlg.done_toggle.setChecked(True)
     dlg.desc.setPlainText("Une description")
     dlg.new_item.setText("Premier pas")
     dlg.new_item.returnPressed.emit()
@@ -398,18 +398,133 @@ def test_card_dialog_edits_are_saved(qapp, board_window, service, monkeypatch):
     assert got.list_id == lists[2].id and changes
     assert dlg.progress_text.text() == "1/2" and dlg.progress.value() == 50
 
-    # Retirer l'échéance remet « terminée » à zéro ; un titre vidé est rétabli
+    # Retirer l'échéance ne touche pas à « terminée » ; un titre vidé est rétabli
     dlg2 = CardDialog(service.repo, card.id)
     dlg2.has_due.setChecked(False)
     dlg2.title_edit.setText("   ")
     dlg2.title_edit.editingFinished.emit()
     assert dlg2.title_edit.text() == "Alpha v2"
     got = service.repo.get_card(card.id)
-    assert got.due is None and not got.done
+    assert got.due is None and got.done
 
     monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
     dlg2._delete()
     assert service.repo.get_card(card.id) is None
+
+
+def test_card_dialog_keeps_typed_title_across_other_edits(qapp, board_window, service):
+    from PySide6.QtTest import QTest
+
+    from noter.ui.card_dialog import CardDialog
+
+    w, board, lists, cards = board_window
+    dlg = CardDialog(service.repo, cards[0].id)
+    dlg.title_edit.clear()
+    QTest.keyClicks(dlg.title_edit, "Nouveau titre")  # frappe réelle : le titre n'est pas encore validé
+    dlg.label_buttons["red"].setChecked(True)  # un autre enregistrement recharge la fiche
+    assert dlg.title_edit.text() == "Nouveau titre"
+    assert service.repo.get_card(cards[0].id).title == "Nouveau titre"
+
+    dlg.title_edit.clear()
+    QTest.keyClicks(dlg.title_edit, "Dernier titre")
+    dlg.desc.setPlainText("Texte")
+    dlg.accept()  # la description est enregistrée avant le titre : le titre ne doit pas revenir à l'ancien
+    got = service.repo.get_card(cards[0].id)
+    assert got.title == "Dernier titre" and got.description == "Texte"
+
+
+def test_card_dialog_enter_only_validates(qapp, board_window, service):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QPushButton
+
+    from noter.ui.card_dialog import CardDialog
+
+    w, board, lists, cards = board_window
+    service.repo.update_card(cards[0].id, recording_id=service.repo.list_recordings()[0].id)  # le bouton « Ouvrir l'enregistrement » existe
+    dlg = CardDialog(service.repo, cards[0].id)
+    requested, finished = [], []
+    dlg.recording_requested.connect(requested.append)
+    dlg.finished.connect(finished.append)
+    assert not any(b.autoDefault() or b.isDefault() for b in dlg.findChildren(QPushButton))
+    dlg.show()
+    dlg.title_edit.setFocus()
+    dlg.title_edit.setText("Renommée")
+    dlg.title_edit.textEdited.emit("Renommée")
+    QTest.keyClick(dlg.title_edit, Qt.Key.Key_Return)
+    assert service.repo.get_card(cards[0].id).title == "Renommée"
+    assert dlg.isVisible() and not finished and not requested
+    assert dlg.rec_btn.isVisibleTo(dlg)
+
+
+def test_card_can_be_done_without_due_date(qapp, board_window, service):
+    from noter.ui.card_dialog import CardDialog
+
+    w, board, lists, cards = board_window
+    dlg = CardDialog(service.repo, cards[0].id)
+    assert dlg.done_toggle.isEnabled()
+    dlg.done_toggle.setChecked(True)
+    got = service.repo.get_card(cards[0].id)
+    assert got.done and got.due is None
+
+    tile = next(t for c in w.board_view.strip.columns for t in c.tiles() if t.card.id == cards[0].id)
+    assert tile.card.done is False  # le board n'a pas encore été rechargé
+    w.board_view.refresh()
+    tile = next(t for c in w.board_view.strip.columns for t in c.tiles() if t.card.id == cards[0].id)
+    assert tile.done_toggle.isChecked() and not tile.done_toggle.isHidden()
+
+
+def test_tile_done_toggle_shows_on_hover_and_saves(qapp, board_window, service):
+    from PySide6.QtCore import QEvent, QPointF
+    from PySide6.QtGui import QEnterEvent
+
+    w, board, lists, cards = board_window
+    w.resize(1100, 700)
+    w.show()
+    qapp.processEvents()
+
+    def tile_of(card_id):
+        return next(t for c in w.board_view.strip.columns for t in c.tiles() if t.card.id == card_id)
+
+    tile = tile_of(cards[1].id)
+    assert tile.done_toggle.isHidden()
+    qapp.sendEvent(tile, QEnterEvent(QPointF(5, 5), QPointF(5, 5), QPointF(5, 5)))
+    assert not tile.done_toggle.isHidden()
+    qapp.sendEvent(tile, QEvent(QEvent.Type.Leave))
+    assert tile.done_toggle.isHidden()
+
+    tile.done_toggle.setChecked(True)  # le clic part en file : le board est reconstruit hors du gestionnaire
+    for _ in range(5):
+        qapp.processEvents()
+    assert service.repo.get_card(cards[1].id).done
+    again = tile_of(cards[1].id)
+    assert again.done_toggle.isChecked() and not again.done_toggle.isHidden()  # reste visible une fois terminée
+
+
+def test_calendar_popup_follows_theme(qapp):
+    from PySide6.QtCore import QDate
+    from PySide6.QtWidgets import QDateEdit, QTableView
+
+    from noter.ui import theme
+    from noter.ui.card_dialog import _style_calendar
+
+    try:
+        for dark in (False, True):
+            theme.apply(qapp, dark=dark)
+            edit = QDateEdit()
+            edit.setCalendarPopup(True)
+            edit.setDate(QDate(2026, 10, 28))
+            _style_calendar(edit)
+            cal = edit.calendarWidget()
+            cal.resize(cal.sizeHint())
+            cal.show()
+            qapp.processEvents()
+            view = cal.findChild(QTableView)
+            grid = view.viewport().grab().toImage().pixelColor(1, view.viewport().height() - 2)
+            assert (grid.lightness() < 100) == dark  # la grille suit le thème, pas toujours le mode nuit
+            cal.hide()
+    finally:
+        theme.apply(qapp, dark=False)
 
 
 def test_filter_hides_non_matching_cards(qapp, board_window, service):

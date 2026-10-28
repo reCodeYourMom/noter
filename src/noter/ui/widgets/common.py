@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import html
 
-from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QToolButton
 
 from noter.models import RecordingStatus
@@ -107,6 +107,58 @@ def tool_button(name: str, text: str = "", ghost: bool = False, tip: str = "") -
         b.setToolTip(tip)
     b.setCursor(Qt.CursorShape.PointingHandCursor)
     return b
+
+
+class DoneToggle(QToolButton):
+    """Rond « Terminer » façon Trello : cercle vide, coche verte en aperçu au survol, disque vert une fois terminé."""
+
+    def __init__(self, size: int = 18, parent=None):
+        super().__init__(parent)
+        self.setObjectName("doneToggle")
+        self.setCheckable(True)
+        self.setFixedSize(QSize(size, size))
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover)
+        self.toggled.connect(self._retip)
+        self._retip(False)
+
+    def _retip(self, done: bool) -> None:
+        self.setToolTip("Rouvrir" if done else "Terminer")
+        self.update()
+
+    def enterEvent(self, e) -> None:  # noqa: N802
+        super().enterEvent(e)
+        self.update()
+
+    def leaveEvent(self, e) -> None:  # noqa: N802
+        super().leaveEvent(e)
+        self.update()
+
+    def paintEvent(self, _e) -> None:  # noqa: N802
+        t = theme.current()
+        done, hover = self.isChecked(), self.underMouse()
+        w, h = self.width(), self.height()
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        circle = QRectF(1.5, 1.5, w - 3, h - 3)
+        if done:
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(qcolor(t.ok_ink if hover else t.ok))
+        else:
+            p.setPen(QPen(qcolor(t.ok if hover else t.ink_4), 1.5))
+            p.setBrush(qcolor(theme.rgba(t.ok, 0.12)) if hover else Qt.BrushStyle.NoBrush)
+        p.drawEllipse(circle)
+        if done or hover:
+            tick = QPainterPath(QPointF(w * 0.29, h * 0.52))
+            tick.lineTo(w * 0.44, h * 0.67)
+            tick.lineTo(w * 0.72, h * 0.35)
+            pen = QPen(QColor("#FFFFFF") if done else qcolor(t.ok), 1.8)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            p.setPen(pen)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawPath(tick)
+        p.end()
 
 
 # ─── Dessin ─────────────────────────────────────────────────────────

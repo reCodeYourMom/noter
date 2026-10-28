@@ -31,7 +31,7 @@ from noter.models import FR_MONTHS, LABEL_NAMES_FR, BoardList, Card
 from noter.storage.repo import Repository
 from noter.ui import icons, theme
 from noter.ui.theme import MONO, Tokens
-from noter.ui.widgets.common import clear_layout, tool_button
+from noter.ui.widgets.common import DoneToggle, clear_layout, tool_button
 
 CARD_MIME = "application/x-noter-card"
 CARD_HEIGHT_MIME = "application/x-noter-card-height"
@@ -118,6 +118,7 @@ def _badge(icon_name: str, text: str, color: str, bg: str | None = None, tip: st
 
 class CardTile(QFrame):
     clicked = Signal(int)
+    done_toggled = Signal(int, bool)
     drag_started = Signal()
     drag_finished = Signal()
 
@@ -149,10 +150,19 @@ class CardTile(QFrame):
             row.addStretch()
             lay.addLayout(row)
 
+        # Le rond « Terminer » n'apparaît qu'au survol (toujours visible une fois la carte terminée), comme sur Trello.
+        title_row = QHBoxLayout()
+        title_row.setSpacing(8)
+        self.done_toggle = DoneToggle()
+        self.done_toggle.setChecked(card.done)
+        self.done_toggle.setVisible(card.done)
+        self.done_toggle.toggled.connect(lambda checked: self.done_toggled.emit(self.card.id, checked))
+        title_row.addWidget(self.done_toggle, 0, Qt.AlignmentFlag.AlignTop)
         title = QLabel(card.title)
         title.setObjectName("cardTitle")
         title.setWordWrap(True)
-        lay.addWidget(title)
+        title_row.addWidget(title, 1)
+        lay.addLayout(title_row)
 
         badges: list[QWidget] = []
         if card.due:
@@ -175,6 +185,15 @@ class CardTile(QFrame):
             row.addStretch()
             lay.addLayout(row)
         _passive(self)
+        self.done_toggle.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+
+    def enterEvent(self, e) -> None:  # noqa: N802
+        self.done_toggle.show()
+        super().enterEvent(e)
+
+    def leaveEvent(self, e) -> None:  # noqa: N802
+        self.done_toggle.setVisible(self.card.done)
+        super().leaveEvent(e)
 
     def matches(self, text: str) -> bool:
         return not text or text.lower() in self._haystack
@@ -379,6 +398,7 @@ class _ListTitle(QLabel):
 
 class ListColumn(QFrame):
     card_open = Signal(int)
+    card_done = Signal(int, bool)  # card_id, terminée
     changed = Signal()           # la base a changé : le board doit se recharger
     drag_started = Signal()
     drag_finished = Signal()
@@ -460,6 +480,7 @@ class ListColumn(QFrame):
         for card in cards:
             tile = CardTile(card, rec_titles.get(card.recording_id or ""))
             tile.clicked.connect(self.card_open)
+            tile.done_toggled.connect(self.card_done)
             tile.drag_started.connect(self.drag_started)
             tile.drag_finished.connect(self.drag_finished)
             self.cards_lay.addWidget(tile)

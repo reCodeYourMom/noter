@@ -223,6 +223,8 @@ def build_palette(t: Tokens) -> QPalette:
 def build_qss(t: Tokens) -> str:
     check = _asset("check", "#FFFFFF", 3.0)
     chevron = _asset("chevron", t.ink_3, 2.0)
+    cal_prev = _asset("chevron_left", t.ink_2, 2.0)
+    cal_next = _asset("chevron_right", t.ink_2, 2.0)
     cta = cta_gradient(t)
     aurora = qss_gradient(aurora_stops(t))
     return f"""
@@ -289,7 +291,16 @@ QDateEdit {{ background: {t.inset}; color: {t.ink}; border: 1.5px solid transpar
 QDateEdit:focus {{ border: 1.5px solid {t.accent}; }}
 QDateEdit::drop-down {{ border: none; width: 22px; }}
 QDateEdit::down-arrow {{ image: url({chevron}); width: 12px; height: 12px; }}
-QCalendarWidget QAbstractItemView {{ selection-background-color: {t.accent}; selection-color: white; }}
+QCalendarWidget {{ background: {t.panel}; }}
+QCalendarWidget QWidget#qt_calendar_navigationbar {{ background: {t.panel}; border-bottom: 1px solid {t.line}; padding: 2px; }}
+QCalendarWidget QToolButton {{ background: transparent; color: {t.ink}; border: none; border-radius: 8px; padding: 4px 8px; font-weight: 600; }}
+QCalendarWidget QToolButton:hover {{ background: {t.accent_soft}; color: {t.accent_ink}; }}
+QCalendarWidget QToolButton::menu-indicator {{ image: none; width: 0; }}
+QCalendarWidget QToolButton#qt_calendar_prevmonth {{ qproperty-icon: url({cal_prev}); }}
+QCalendarWidget QToolButton#qt_calendar_nextmonth {{ qproperty-icon: url({cal_next}); }}
+QCalendarWidget QSpinBox {{ background: {t.inset}; color: {t.ink}; border: 1.5px solid transparent; border-radius: 8px; padding: 2px 6px; selection-background-color: {t.accent}; selection-color: white; }}
+QCalendarWidget QAbstractItemView {{ background: {t.panel}; color: {t.ink}; selection-background-color: {t.accent}; selection-color: white; outline: 0; }}
+QCalendarWidget QAbstractItemView:disabled {{ color: {t.ink_4}; }}
 
 /* Boutons */
 QPushButton, QToolButton {{ background: transparent; color: {t.ink_2}; border: 1px solid {t.line_2}; border-radius: 8px; padding: 5px 11px; font-weight: 500; }}
@@ -375,6 +386,7 @@ QToolButton#addCard:hover {{ background: {t.accent_soft}; color: {t.accent_ink};
 QFrame#addList {{ background: {t.sel}; border: 1.5px dashed {t.line_2}; border-radius: 14px; }}
 QToolButton#railAdd {{ border: none; padding: 2px 5px; color: {t.ink_3}; border-radius: 6px; }}
 QToolButton#railAdd:hover {{ background: {t.accent_soft}; color: {t.accent_ink}; }}
+QToolButton#doneToggle {{ background: transparent; border: none; padding: 0; }}
 QToolButton#labelPick {{ border: 2px solid transparent; border-radius: 12px; min-width: 40px; min-height: 24px; padding: 0 6px; }}
 QProgressBar {{ background: {t.inset}; border: none; border-radius: 4px; max-height: 8px; min-height: 8px; }}
 QProgressBar::chunk {{ background: {qss_gradient([(0.0, t.accent), (1.0, t.ok)])}; border-radius: 4px; }}

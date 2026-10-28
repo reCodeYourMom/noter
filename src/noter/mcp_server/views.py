@@ -171,6 +171,8 @@ class TaskIndex:
         out.update({"list_id": card.list_id, "list": lst.name if lst else None})
         if card.description and not compact:
             out["description"] = card.description
+        if card.done:
+            out["done"] = True
         if card.due:
             out["due"] = card.due.isoformat()
             out["due_done"] = card.done
@@ -204,8 +206,10 @@ def board_markdown(repo: Repository, board: Board) -> str:
         parts.append(f"## {lst.name} ({len(cards.get(lst.id, []))})")
         for c in cards.get(lst.id, []):
             meta = []
+            if c.done:
+                meta.append("✓ terminée")
             if c.due:
-                meta.append(("✓ " if c.done else "") + f"échéance {c.due:%d/%m/%Y}" + (" (en retard)" if c.is_overdue() else ""))
+                meta.append(f"échéance {c.due:%d/%m/%Y}" + (" (en retard)" if c.is_overdue() else ""))
             if c.labels:
                 meta.append(", ".join(LABEL_NAMES_FR.get(k, k) for k in c.labels))
             if c.checklist:
