@@ -55,6 +55,11 @@ def main() -> int:
     except Exception:  # noqa: BLE001
         pass
 
+    if settings.debug_windows:
+        from noter.ui.windowtrace import install as install_window_trace
+
+        install_window_trace(app)
+
     # Instance unique : si Noter tourne déjà, on lui demande d'afficher sa fenêtre et on sort.
     from noter.applink import socket_path
     from noter.ui.single_instance import SingleInstance

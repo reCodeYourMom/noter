@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     # Jobs
     job_max_attempts: int = 3
 
+    # Diagnostic : journalise chaque fenêtre affichée (cherche ce qui fait sortir du plein écran macOS)
+    debug_windows: bool = False
+
     # Serveur MCP (Noter depuis Claude Desktop / Claude Code)
     mcp_read_only: bool = False     # seulement les outils de lecture
     mcp_allow_delete: bool = False  # outils de suppression (enregistrements, cartes)
