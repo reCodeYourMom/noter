@@ -20,7 +20,7 @@ def noter_home() -> Path:
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="NOTER_",
-        env_file=(noter_home() / ".env", ".env"),
+        env_file=noter_home() / ".env",  # jamais le .env du dossier courant (non fiable)
         env_file_encoding="utf-8",
         extra="ignore",
     )

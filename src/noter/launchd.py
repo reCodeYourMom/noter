@@ -19,7 +19,7 @@ def _program_arguments() -> list[str]:
     if macapp.is_installed():
         return [str(macapp.app_path() / "Contents" / "MacOS" / "noter")]
     exe = Path(sys.executable).parent / "noter-app"
-    return [str(exe)] if exe.exists() else [sys.executable, "-m", "noter.ui.main"]
+    return [str(exe)] if exe.exists() else [sys.executable, "-P", "-m", "noter.ui.main"]
 
 
 def install(log_path: Path) -> Path:

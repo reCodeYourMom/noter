@@ -74,9 +74,10 @@ int main(int argc, char *argv[]) {{
     snprintf(newpath, sizeof newpath, "/opt/homebrew/bin:/usr/local/bin:%s", oldpath ? oldpath : "/usr/bin:/bin");
     setenv("PATH", newpath, 1);
 
-    char **args = calloc((size_t)argc + 3, sizeof(char *));
+    char **args = calloc((size_t)argc + 4, sizeof(char *));
     int n = 0;
     args[n++] = (char *)python;
+    args[n++] = "-P";  // le dossier courant n'entre pas dans sys.path
     args[n++] = "-m";
     args[n++] = (char *)module;
     for (int i = 1; i < argc; i++)
@@ -113,7 +114,7 @@ def _launcher_script(python: Path, module: str = MODULE) -> str:
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 LOG="${{NOTER_HOME:-$HOME/Noter}}/noter.log"
 mkdir -p "$(dirname "$LOG")"
-exec "{python}" -m {module} "$@" >>"$LOG" 2>&1
+exec "{python}" -P -m {module} "$@" >>"$LOG" 2>&1
 """
 
 

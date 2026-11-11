@@ -349,7 +349,7 @@ def test_resources_and_prompts(server, call_done):
 def test_desktop_config_is_merged_backed_up_and_removed(tmp_path):
     cfg = tmp_path / "Claude" / "claude_desktop_config.json"
     install.install_desktop(cfg, python=tmp_path / "py")
-    assert json.loads(cfg.read_text())["mcpServers"]["noter"]["args"] == ["-m", "noter.mcp_server"]
+    assert json.loads(cfg.read_text())["mcpServers"]["noter"]["args"] == ["-P", "-m", "noter.mcp_server"]
 
     cfg.write_text(json.dumps({"mcpServers": {"autre": {"command": "x"}}, "theme": "dark"}))
     install.install_desktop(cfg, python=tmp_path / "py")
@@ -373,7 +373,7 @@ def test_server_entry_keeps_noter_home(home):
     assert entry["env"] == {"NOTER_HOME": str(home)}
     cmd = install.claude_code_command()
     assert cmd[:8] == ["claude", "mcp", "add", "-s", "user", "noter", "-e", f"NOTER_HOME={home}"]
-    assert cmd[-2:] == ["-m", "noter.mcp_server"]
+    assert cmd[-3:] == ["-P", "-m", "noter.mcp_server"]
 
 
 def test_unnamed_speaker_can_be_renamed(server, service, wav, engine):

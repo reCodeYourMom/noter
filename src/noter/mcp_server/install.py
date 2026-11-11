@@ -19,8 +19,11 @@ def desktop_config_path() -> Path:
 
 
 def server_entry(python: Path | None = None) -> dict:
-    """Commande lancée par Claude : le Python du venv (Claude Desktop a un PATH minimal)."""
-    entry: dict = {"command": str(python or _venv_python()), "args": ["-m", MODULE]}
+    """Commande lancée par Claude : le Python du venv (Claude Desktop a un PATH minimal).
+
+    `-P` : le dossier courant (choisi par le client MCP, ex. le projet ouvert) n'entre pas dans sys.path.
+    """
+    entry: dict = {"command": str(python or _venv_python()), "args": ["-P", "-m", MODULE]}
     if os.environ.get("NOTER_HOME"):
         entry["env"] = {"NOTER_HOME": os.environ["NOTER_HOME"]}
     return entry
