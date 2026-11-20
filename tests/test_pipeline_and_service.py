@@ -279,3 +279,76 @@ def test_a_task_failure_never_fails_the_summary(service, settings, engine, wav, 
     service.jobs.run_pending()
     assert service.repo.get_recording(rec.id).status == RecordingStatus.DONE  # le résumé est bien là
     assert [j.status for j in service.repo.list_jobs(recording_id=rec.id)] == [JobStatus.DONE, JobStatus.DONE]
+
+
+def _silent_wav(path: Path, seconds: float = 2.0, rate: int = 16000) -> Path:
+    import numpy as np
+    import soundfile as sf
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(str(path), np.zeros(int(rate * seconds), dtype="float32"), rate, subtype="PCM_16")
+    return path
+
+
+def test_silent_audio_fails_at_once_with_the_mic_hint(service, tmp_path, engine):
+    """Micro refusé par macOS → audio muet. On n'appelle pas Whisper (il inventerait du japonais) et on explique."""
+    rec = service.import_file(_silent_wav(tmp_path / "in" / "mute.wav"))
+    assert service.jobs.run_pending() == 1  # pas de résumé derrière
+    rec = service.repo.get_recording(rec.id)
+    job = service.repo.list_jobs(recording_id=rec.id)[0]
+    assert rec.status == RecordingStatus.FAILED and job.status == JobStatus.FAILED
+    assert job.attempts == 1  # échec définitif : pas trois tentatives inutiles
+    assert "silencieux" in job.error and not job.error.startswith("UnusableAudioError")
+    assert engine.calls == []
+
+
+def test_recording_only_made_of_ghost_phrases_fails_clearly(service, settings, wav):
+    from noter.models import Segment
+    from noter.transcription.base import FakeEngine
+
+    ghost = FakeEngine([Segment(i * 30.0, i * 30.0 + 2, "ご視聴ありがとうございました") for i in range(13)], language="ja")
+    service.pipeline = Pipeline(service.repo, settings, engine=ghost, summarizer=FakeSummarizer())
+    service.jobs.pipeline = service.pipeline
+
+    rec = service.import_file(wav)
+    service.jobs.run_pending()
+    rec = service.repo.get_recording(rec.id)
+    job = service.repo.list_jobs(recording_id=rec.id)[0]
+    assert rec.status == RecordingStatus.FAILED and job.status == JobStatus.FAILED and job.attempts == 1
+    assert "13 phrase(s) fantômes" in job.error and "ご視聴ありがとうございました" in job.error
+    assert service.repo.get_segments(rec.id) == [] and service.repo.get_summary(rec.id) is None
+
+
+def test_ghost_phrases_are_stripped_from_a_real_transcript(service, settings, wav):
+    from noter.models import Segment
+    from noter.transcription.base import FakeEngine
+
+    mixed = FakeEngine([Segment(0, 2, "Bonjour à tous."), Segment(2, 4, "Sous-titres réalisés par la communauté d'Amara.org"),
+                        Segment(4, 6, "On valide le devis ?")])
+    service.pipeline = Pipeline(service.repo, settings, engine=mixed, summarizer=FakeSummarizer())
+    service.jobs.pipeline = service.pipeline
+
+    rec = service.import_file(wav)
+    assert service.jobs.run_pending() == 2
+    assert service.repo.get_recording(rec.id).status == RecordingStatus.DONE
+    assert [s.text for s in service.repo.get_segments(rec.id)] == ["Bonjour à tous.", "On valide le devis ?"]
+
+
+def test_recorded_silence_points_to_macos_mic_permission(service, settings):
+    """Même message pour un vrai enregistrement récupéré après crash : la cause est le micro, pas Whisper."""
+    from datetime import datetime
+    from uuid import uuid4
+
+    from noter.audio.recorder import MIC_TMP
+    from noter.models import Recording, Source
+
+    d = files.recording_dir(settings.data_dir, datetime(2026, 11, 18, 17, 2), "Réunion")
+    _silent_wav(d / MIC_TMP, seconds=3.0, rate=48000)
+    rec = Recording(id=str(uuid4()), title="Réunion", source=Source.MAC_SYSTEM_MIC, status=RecordingStatus.RECORDING,
+                    started_at=datetime(2026, 11, 18, 17, 2), audio_path=d / files.AUDIO_NAME, dir_path=d)
+    service.repo.create_recording(rec)
+    service.recover()
+    service.jobs.run_pending()
+    job = service.repo.list_jobs(recording_id=rec.id)[0]
+    assert job.status == JobStatus.FAILED
+    assert "Confidentialité et sécurité → Micro" in job.error and "noter doctor --mic" in job.error

@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from noter import notify
 from noter.audio.devices import AudioRoute
 from noter.models import Recording
 from noter.ui import icons, theme
@@ -192,6 +193,7 @@ class RecordingConsole(QWidget):
         self.mic.set_level(0)
         self.sys.set_level(0)
         self._mic_peak = 0.0
+        self._silence_notified = False
         self.silence.hide()
         self._blink.start()
 
@@ -200,6 +202,7 @@ class RecordingConsole(QWidget):
         self._set_lamp(True)
 
     SILENCE_AFTER_S = 3.0
+    SILENCE_NOTIFY_AFTER_S = 10.0
     WARN_TEXT_W = 460 - 14 - 14 - 16 - 10  # carte − marges − icône − espacement
     SYS_SILENCE_AFTER_S = 20.0  # les autres peuvent se taire un moment : on attend avant de conclure
 
@@ -233,4 +236,9 @@ class RecordingConsole(QWidget):
         self._update_sys_warning(elapsed)
         # Un vrai micro a toujours un bruit de fond : un zéro parfait signifie accès refusé
         self._mic_peak = max(getattr(self, "_mic_peak", 0.0), mic)
-        self.silence.setVisible(elapsed >= self.SILENCE_AFTER_S and self._mic_peak == 0.0)
+        silent = elapsed >= self.SILENCE_AFTER_S and self._mic_peak == 0.0
+        self.silence.setVisible(silent)
+        # La fenêtre est souvent fermée pendant un call : prévenir aussi hors de l'app, une seule fois
+        if silent and elapsed >= self.SILENCE_NOTIFY_AFTER_S and not getattr(self, "_silence_notified", False):
+            self._silence_notified = True
+            notify.notify("Noter — micro muet", "Aucun son capté : autorise Noter dans Réglages Système → Micro, puis relance l'app.")

@@ -557,14 +557,17 @@ class Repository:
             )
         return self.get_job(r["id"])
 
-    def finish_job(self, job_id: int, ok: bool, error: str | None = None) -> Job | None:
-        """Clôt un job. Retourne None s'il n'existe plus (enregistrement supprimé entre-temps)."""
+    def finish_job(self, job_id: int, ok: bool, error: str | None = None, final: bool = False) -> Job | None:
+        """Clôt un job. Retourne None s'il n'existe plus (enregistrement supprimé entre-temps).
+
+        `final` : l'échec est définitif (réessayer ne servirait à rien), on ne remet pas en file.
+        """
         job = self.get_job(job_id)
         if job is None:
             return None
         if ok:
             status = JobStatus.DONE
-        elif job.attempts < job.max_attempts:
+        elif job.attempts < job.max_attempts and not final:
             status = JobStatus.QUEUED
         else:
             status = JobStatus.FAILED

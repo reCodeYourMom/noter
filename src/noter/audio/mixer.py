@@ -9,6 +9,10 @@ from scipy.signal import resample_poly
 
 CHUNK = 48000 * 10  # 10 s
 
+# −60 dBFS. Un micro réel, même au repos, a un bruit de fond au-dessus ; en dessous c'est du silence
+# numérique : accès au micro refusé par macOS, entrée coupée, ou BlackHole qui ne reçoit rien.
+SILENT_PEAK = 0.001
+
 
 def mix_wavs(mic_path: Path, sys_path: Path | None, out_path: Path, gain_mic: float = 1.0, gain_sys: float = 1.0) -> float:
     """Mixe mic (+ système) dans out_path (PCM16 mono). Retourne la durée en secondes."""
@@ -49,6 +53,32 @@ def _copy_mono(src: Path, dst: Path) -> float:
                 out.write(a.mean(axis=1))
                 frames += len(a)
     return frames / rate
+
+
+def peak_level(path: Path) -> float | None:
+    """Pic absolu (0..1) d'un fichier audio, lu par tranches. None si le fichier est illisible."""
+    try:
+        with sf.SoundFile(str(path)) as f:
+            peak = 0.0
+            while True:
+                a = f.read(CHUNK, dtype="float32", always_2d=True)
+                if len(a) == 0:
+                    break
+                peak = max(peak, float(np.max(np.abs(a))))
+            return peak
+    except Exception:  # noqa: BLE001
+        pass
+    try:  # m4a, mp3… importés : via PyAV
+        from noter.audio.decode import load_audio_16k
+
+        data = load_audio_16k(path)
+        return float(np.max(np.abs(data))) if len(data) else 0.0
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def to_dbfs(peak: float) -> float:
+    return 20 * float(np.log10(max(peak, 1e-9)))
 
 
 def wav_duration(path: Path) -> float:

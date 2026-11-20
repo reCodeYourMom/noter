@@ -392,7 +392,9 @@ def mcp_config():
 
 
 @app.command()
-def doctor():
+def doctor(
+    mic: bool = typer.Option(False, "--mic", help="Enregistre 1,5 s sur le micro par défaut et mesure le niveau"),
+):
     """Vérifie la configuration."""
     from noter.config import load_settings
 
@@ -411,8 +413,18 @@ def doctor():
 
         table.add_row("Micro", (default_mic() or AudioDeviceNone()).name)
         table.add_row("BlackHole", "[green]oui[/]" if find_blackhole() else "[yellow]non[/]")
+        if mic:
+            table.add_row("Test micro", _mic_test())
     except Exception as e:  # noqa: BLE001
         table.add_row("Audio", f"[red]{e}[/]")
+    from noter import macapp
+
+    if macapp.is_installed():
+        table.add_row("Lanceur", "[green]natif[/] (macOS peut autoriser le micro)" if macapp.is_native() else
+                      "[red]lanceur script[/] : macOS refusera le micro sans rien dire → "
+                      "`xcode-select --install` puis `noter app install`")
+    else:
+        table.add_row("Lanceur", "[yellow]Noter.app non installée[/] (noter app install)")
     try:
         import mcp  # noqa: F401
 
@@ -435,6 +447,22 @@ def doctor():
 
 class AudioDeviceNone:
     name = "[red]aucun[/]"
+
+
+def _mic_test() -> str:
+    from noter.audio.devices import mic_peak
+    from noter.audio.mixer import SILENT_PEAK, to_dbfs
+
+    console.print("[dim]Test micro : 1,5 s d'écoute…[/]")
+    peak = mic_peak()
+    if peak is None:
+        return "[red]aucun micro[/]"
+    if peak == 0.0:
+        return ("[red]silence absolu[/] : accès au micro refusé à ce processus. Réglages Système → Confidentialité "
+                "et sécurité → Micro → autorise le Terminal (pour ce test) et Noter (pour l'app).")
+    if peak < SILENT_PEAK:
+        return f"[yellow]quasi muet[/] ({to_dbfs(peak):.0f} dBFS) : micro coupé ou mauvaise entrée sélectionnée ?"
+    return f"[green]OK[/] (pic {to_dbfs(peak):.0f} dBFS)"
 
 
 def _print_summary(svc, recording_id: str) -> None:

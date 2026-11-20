@@ -10,13 +10,45 @@ from pathlib import Path
 
 from noter import tasks
 from noter.analyzer.claude import Summarizer, to_summary
+from noter.audio.mixer import SILENT_PEAK, peak_level, to_dbfs
 from noter.config import Settings
-from noter.models import RecordingStatus, format_duration
+from noter.models import Recording, RecordingStatus, Source, format_duration
 from noter.storage import files
 from noter.storage.repo import Repository
 from noter.transcription.base import TranscriptionEngine
+from noter.transcription.cleanup import clean_segments
 
 logger = logging.getLogger(__name__)
+
+
+class UnusableAudioError(RuntimeError):
+    """L'audio ne contient rien à transcrire. Réessayer ne changera rien : le job échoue tout de suite."""
+
+    retryable = False
+
+
+MIC_HELP = (
+    "Sur Mac, c'est presque toujours l'accès au micro refusé à Noter : Réglages Système → "
+    "Confidentialité et sécurité → Micro → active Noter, puis relance l'app. Si Noter n'apparaît pas "
+    "dans la liste, exécute `xcode-select --install` puis `noter app install`, et lance Noter depuis "
+    "Noter.app (pas depuis le terminal). `noter doctor --mic` fait le test."
+)
+
+
+def silent_audio_message(rec: Recording, peak: float) -> str:
+    level = "silence numérique absolu" if peak == 0.0 else f"pic à {to_dbfs(peak):.0f} dBFS"
+    if rec.source == Source.IMPORT:
+        return f"Fichier audio silencieux ({level}) : rien à transcrire."
+    return f"Enregistrement silencieux ({level}) : aucun son n'a été capté pendant {format_duration(rec.duration_s)}. {MIC_HELP}"
+
+
+def no_speech_message(rec: Recording, dropped: int) -> str:
+    what = (f"Whisper n'a produit que {dropped} phrase(s) fantômes (du type « ご視聴ありがとうございました »), "
+            "ce qu'il invente sur un audio muet ou inaudible") if dropped else "Whisper n'a détecté aucune parole"
+    if rec.source == Source.IMPORT:
+        return f"Aucune parole dans le fichier : {what}."
+    return (f"Aucune parole dans l'enregistrement : {what}. Vérifie que le micro capte bien ta voix et, pour la voix "
+            f"des autres, que la sortie audio est le périphérique à sorties multiples (BlackHole + écouteurs). {MIC_HELP}")
 
 
 class Pipeline:
@@ -57,8 +89,17 @@ class Pipeline:
 
         self.repo.set_status(rec.id, RecordingStatus.TRANSCRIBING)
         try:
+            # Avant de lancer Whisper (long) : un audio muet ne donnerait que des phrases inventées
+            peak = peak_level(Path(rec.audio_path))
+            if peak is not None and peak < SILENT_PEAK:
+                raise UnusableAudioError(silent_audio_message(rec, peak))
+
             result = self.engine.transcribe(Path(rec.audio_path), language=self.settings.whisper_language)
-            segments = result.segments
+            segments, dropped = clean_segments(result.segments)
+            if dropped:
+                logger.info("Transcription %s : %d segment(s) fantôme(s) retiré(s)", rec.short_id, dropped)
+            if not segments:
+                raise UnusableAudioError(no_speech_message(rec, dropped))
             if self.settings.diarize and segments:
                 try:
                     from noter.transcription.diarization import assign_speakers, diarize

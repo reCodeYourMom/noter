@@ -256,3 +256,31 @@ def test_recorder_start_rereads_devices_and_records_the_route(tmp_path, monkeypa
     assert events[:2] == ["refresh", "mic"]  # la liste est relue AVANT de choisir le micro
     assert r.route.mic == "AirPods Pro" and r.route.system == "BlackHole 2ch" and r.route.output == "AirPods Pro"
     assert r.route.output_suspect
+
+
+def test_peak_level_tells_silence_from_sound(tmp_path):
+    from noter.audio.mixer import SILENT_PEAK, peak_level, to_dbfs
+
+    tone = make_wav(tmp_path / "tone.wav")
+    assert peak_level(tone) > SILENT_PEAK
+    silent = tmp_path / "silent.wav"
+    sf.write(str(silent), np.zeros(16000, dtype="float32"), 16000, subtype="PCM_16")
+    assert peak_level(silent) == 0.0
+    assert peak_level(tmp_path / "absent.wav") is None
+    assert to_dbfs(1.0) == 0.0 and to_dbfs(0.001) < -59
+
+
+def test_whisper_ghost_phrases_are_dropped():
+    from noter.transcription.cleanup import clean_segments, is_hallucination
+
+    assert is_hallucination("ご視聴ありがとうございました")
+    assert is_hallucination(" ご視聴ありがとうございました。 ")
+    assert is_hallucination("Sous-titres réalisés par la communauté d'Amara.org")
+    assert is_hallucination("Thank you for watching!")
+    assert is_hallucination("...")
+    assert not is_hallucination("Merci, on se revoit jeudi pour valider le budget.")
+    assert not is_hallucination("Thank you for the update, let's move on.")
+
+    segs = [Segment(0, 1, "ご視聴ありがとうございました"), Segment(1, 2, "On commence ?"), Segment(2, 3, "Thanks for watching")]
+    kept, dropped = clean_segments(segs)
+    assert [s.text for s in kept] == ["On commence ?"] and dropped == 2

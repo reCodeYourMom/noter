@@ -81,6 +81,24 @@ def supported_samplerate(device: AudioDevice, wanted: int) -> int:
         return int(device.default_samplerate)
 
 
+def mic_peak(seconds: float = 1.5, device: AudioDevice | None = None) -> float | None:
+    """Enregistre `seconds` sur le micro par défaut et retourne le pic absolu (0..1), None sans micro.
+
+    Un pic exactement nul = silence numérique : macOS n'a pas donné l'accès au micro au processus
+    appelant (lancé depuis le terminal, c'est l'autorisation du terminal qui compte, pas celle de Noter.app).
+    """
+    import numpy as np
+
+    sd = _sd()
+    mic = device or default_mic()
+    if mic is None:
+        return None
+    rate = supported_samplerate(mic, 48000)
+    data = sd.rec(int(seconds * rate), samplerate=rate, channels=1, dtype="float32", device=mic.index)
+    sd.wait()
+    return float(np.max(np.abs(data))) if len(data) else 0.0
+
+
 def default_output_name() -> str | None:
     """Nom de la sortie audio actuelle du Mac (là où part le son des calls)."""
     sd = _sd()

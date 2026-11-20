@@ -144,6 +144,27 @@ Redémarre Claude Desktop, puis demande par exemple :
 | `NOTER_MCP_LAUNCH_APP` | `true` | lancer Noter.app si un traitement ou un enregistrement le demande |
 | `NOTER_HOME` | `~/Noter` | déplace données, base, logs et `.env` |
 
+## Dépannage
+
+### Le transcript ne contient que « ご視聴ありがとうございました » (ou du japonais, ou « Amara.org »)
+
+Ce n'est pas un bug de langue : Whisper **invente** ces formules de fin de vidéo quand l'audio est muet. L'enregistrement n'a capté aucun son, presque toujours parce que **macOS a refusé le micro à Noter** sur ce Mac (nouvelle machine, réinstallation, ou Noter.app sans lanceur natif).
+
+Noter détecte maintenant ce cas : l'enregistrement passe en **Échec** avec la cause, sans lancer Whisper, et une notification « micro muet » part dès 10 s de silence absolu pendant le call. Pour corriger :
+
+1. **Réglages Système → Confidentialité et sécurité → Micro** : active **Noter**, puis quitte et relance l'app (⌘Q depuis la barre de menu).
+2. Si Noter **n'apparaît pas** dans la liste, le bundle n'a pas de lanceur natif (il faut un compilateur C) :
+   ```bash
+   xcode-select --install
+   source .venv/bin/activate && noter app install
+   open -a Noter
+   ```
+   Lance toujours Noter depuis **Noter.app** (Spotlight, Dock) : lancée depuis le terminal, c'est l'autorisation du terminal qui compte.
+3. `noter doctor` indique si Noter.app a un lanceur natif ; `noter doctor --mic` écoute 1,5 s et dit si le micro arrive (depuis le terminal, il faut avoir autorisé le Terminal).
+4. Pendant un call, la console affiche les vumètres **MIC** et **SYS** : s'ils restent à zéro, rien n'est enregistré. Le menu Son de macOS doit pointer sur le bon micro en entrée et sur le périphérique à sorties multiples en sortie.
+
+Un fichier importé muet, ou une transcription faite uniquement de ces phrases, échoue de la même façon avec un message explicite. Les phrases fantômes isolées au milieu d'un vrai transcript sont retirées.
+
 ## Fiabilité
 
 - **File de jobs persistée** : transcription et résumé sont des jobs en base, rejoués jusqu'à 3 fois, repris au redémarrage si l'app a été tuée en plein traitement.

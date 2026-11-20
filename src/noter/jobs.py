@@ -141,9 +141,13 @@ class JobQueue:
             if self.repo.get_recording(job.recording_id) is None:
                 self._abandoned(job)
                 return
-            err = f"{type(e).__name__}: {e}"
-            logger.error("Job #%d en erreur : %s\n%s", job.id, err, traceback.format_exc())
-            failed = self.repo.finish_job(job.id, ok=False, error=err)
+            retryable = getattr(e, "retryable", True)
+            err = str(e) if not retryable else f"{type(e).__name__}: {e}"
+            if retryable:
+                logger.error("Job #%d en erreur : %s\n%s", job.id, err, traceback.format_exc())
+            else:
+                logger.error("Job #%d abandonné (pas de nouvelle tentative) : %s", job.id, err)
+            failed = self.repo.finish_job(job.id, ok=False, error=err, final=not retryable)
             if failed is None:
                 self._abandoned(job)
                 return
